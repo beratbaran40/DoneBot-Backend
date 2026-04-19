@@ -52,6 +52,7 @@ data class GroupSummaryData(
 )
 
 data class GroupSummaryListData(
+    @com.fasterxml.jackson.annotation.JsonProperty("familyGroups")
     val groups: List<GroupSummaryData>,
     val count: Int,
 )
