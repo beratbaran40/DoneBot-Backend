@@ -20,6 +20,10 @@ data class RefreshTokenRequest(
     @field:NotBlank val refreshToken: String,
 )
 
+data class OAuthTokenRequest(
+    @field:NotBlank val token: String,
+)
+
 data class AuthResponseData(
     val accessToken: String,
     val refreshToken: String,

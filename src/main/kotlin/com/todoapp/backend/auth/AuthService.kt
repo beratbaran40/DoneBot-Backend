@@ -1,5 +1,7 @@
 package com.todoapp.backend.auth
 
+import com.todoapp.backend.auth.oauth.FacebookAuthService
+import com.todoapp.backend.auth.oauth.GoogleAuthService
 import com.todoapp.backend.user.UserEntity
 import com.todoapp.backend.user.UserRepository
 import com.todoapp.backend.user.toDto
@@ -19,6 +21,8 @@ class AuthService(
     private val refreshTokens: RefreshTokenRepository,
     private val jwtService: JwtService,
     private val passwordEncoder: PasswordEncoder,
+    private val google: GoogleAuthService,
+    private val facebook: FacebookAuthService,
 ) {
     private val rng = SecureRandom()
 
@@ -40,6 +44,41 @@ class AuthService(
         val user = users.findByEmail(req.email) ?: throw AuthException("Invalid credentials")
         val hash = user.passwordHash ?: throw AuthException("Invalid credentials")
         if (!passwordEncoder.matches(req.password, hash)) throw AuthException("Invalid credentials")
+        return issueTokenPair(user)
+    }
+
+    @Transactional
+    fun googleLogin(req: OAuthTokenRequest): AuthResponseData {
+        val profile = google.verify(req.token) ?: throw AuthException("Invalid Google token")
+        return upsertOAuthUser(profile.email, profile.displayName, profile.avatarUrl, "google")
+    }
+
+    @Transactional
+    fun facebookLogin(req: OAuthTokenRequest): AuthResponseData {
+        val profile = facebook.verify(req.token) ?: throw AuthException("Invalid Facebook token")
+        return upsertOAuthUser(profile.email, profile.displayName, profile.avatarUrl, "facebook")
+    }
+
+    private fun upsertOAuthUser(email: String, displayName: String, avatarUrl: String?, provider: String): AuthResponseData {
+        val existing = users.findByEmail(email)
+        val user = if (existing != null) {
+            if (provider !in existing.providers) {
+                existing.providersCsv = (existing.providers + provider).joinToString(",")
+            }
+            if (existing.avatarUrl == null && avatarUrl != null) existing.avatarUrl = avatarUrl
+            existing.emailVerified = true
+            users.save(existing)
+        } else {
+            users.save(
+                UserEntity(
+                    email = email,
+                    displayName = displayName,
+                    avatarUrl = avatarUrl,
+                    emailVerified = true,
+                    providersCsv = provider,
+                )
+            )
+        }
         return issueTokenPair(user)
     }
 

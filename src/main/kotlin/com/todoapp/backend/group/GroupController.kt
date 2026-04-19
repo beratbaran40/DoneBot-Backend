@@ -17,6 +17,7 @@ import org.springframework.web.bind.annotation.RestController
 class GroupController(
     private val service: GroupService,
     private val taskService: GroupTaskService,
+    private val activityService: GroupActivityService,
 ) {
     @PostMapping
     fun create(@Valid @RequestBody req: CreateGroupRequest): BaseResponse<GroupData> =
@@ -87,4 +88,8 @@ class GroupController(
         taskService.delete(CurrentUser.id(), groupId, taskId)
         return BaseResponse.ok()
     }
+
+    @GetMapping("/{groupId}/activity")
+    fun activity(@PathVariable groupId: Long): BaseResponse<GroupActivityListData> =
+        BaseResponse.ok(activityService.list(CurrentUser.id(), groupId))
 }

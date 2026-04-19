@@ -17,6 +17,8 @@ class GroupTaskService(
     private val members: GroupMemberRepository,
     private val users: UserRepository,
     private val groupService: GroupService,
+    private val activity: GroupActivityService,
+    private val push: com.todoapp.backend.notif.PushService,
 ) {
     @Transactional(readOnly = true)
     fun list(callerId: Long, groupId: Long): GroupTaskListData {
@@ -45,6 +47,20 @@ class GroupTaskService(
                 priority = req.priority,
             )
         )
+        activity.log(groupId, callerId, GroupActivityType.TASK_CREATED,
+            description = "Created task “${entity.title}”", taskId = entity.id, taskTitle = entity.title)
+        if (entity.assignedToUserId != null) {
+            val assigneeName = users.findById(entity.assignedToUserId!!).orElse(null)?.displayName ?: "?"
+            activity.log(groupId, callerId, GroupActivityType.TASK_ASSIGNED,
+                description = "Assigned “${entity.title}” to $assigneeName",
+                taskId = entity.id, taskTitle = entity.title)
+            push.sendToUsers(
+                listOf(entity.assignedToUserId!!),
+                title = "New task assigned",
+                body = "${entity.title} was assigned to you",
+                data = mapOf("taskId" to entity.id.toString(), "groupId" to groupId.toString()),
+            )
+        }
         return entity.toDto()
     }
 
@@ -57,6 +73,8 @@ class GroupTaskService(
         if (task.familyGroupId != groupId) {
             throw ResponseStatusException(HttpStatus.NOT_FOUND, "Task not in this group")
         }
+        val priorAssignee = task.assignedToUserId
+        val priorCompleted = task.isCompleted
         req.title?.let { task.title = it }
         req.description?.let { task.description = it }
         req.dueDate?.let {
@@ -72,7 +90,32 @@ class GroupTaskService(
                 task.assignedToUserId = req.assigneeId
             }
         }
-        return tasks.save(task).toDto()
+        val saved = tasks.save(task)
+        // Activity logging
+        if (priorAssignee != saved.assignedToUserId) {
+            if (saved.assignedToUserId == null) {
+                activity.log(groupId, callerId, GroupActivityType.TASK_UNASSIGNED,
+                    description = "Unassigned “${saved.title}”", taskId = saved.id, taskTitle = saved.title)
+            } else {
+                val name = users.findById(saved.assignedToUserId!!).orElse(null)?.displayName ?: "?"
+                activity.log(groupId, callerId, GroupActivityType.TASK_ASSIGNED,
+                    description = "Assigned “${saved.title}” to $name", taskId = saved.id, taskTitle = saved.title)
+                push.sendToUsers(
+                    listOf(saved.assignedToUserId!!),
+                    title = "Task assigned to you",
+                    body = "${saved.title} was assigned to you",
+                    data = mapOf("taskId" to saved.id.toString(), "groupId" to groupId.toString()),
+                )
+            }
+        }
+        if (!priorCompleted && saved.isCompleted) {
+            activity.log(groupId, callerId, GroupActivityType.TASK_COMPLETED,
+                description = "Completed “${saved.title}”", taskId = saved.id, taskTitle = saved.title)
+        } else if (req.title != null || req.description != null || req.dueDate != null || req.priority != null) {
+            activity.log(groupId, callerId, GroupActivityType.TASK_UPDATED,
+                description = "Updated “${saved.title}”", taskId = saved.id, taskTitle = saved.title)
+        }
+        return saved.toDto()
     }
 
     @Transactional
@@ -88,7 +131,10 @@ class GroupTaskService(
         if (!isAdmin && task.ownerId != callerId) {
             throw ResponseStatusException(HttpStatus.FORBIDDEN, "Only admins or task creator can delete")
         }
+        val title = task.title
         tasks.delete(task)
+        activity.log(groupId, callerId, GroupActivityType.TASK_DELETED,
+            description = "Deleted “$title”", taskId = taskId, taskTitle = title)
     }
 
     private fun requireMemberOfGroup(groupId: Long, userId: Long) {

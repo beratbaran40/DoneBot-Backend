@@ -26,6 +26,14 @@ class AuthController(private val authService: AuthService) {
     fun refresh(@Valid @RequestBody req: RefreshTokenRequest): BaseResponse<RefreshTokenData> =
         BaseResponse.ok(authService.refresh(req))
 
+    @PostMapping("/google")
+    fun google(@Valid @RequestBody req: OAuthTokenRequest): BaseResponse<AuthResponseData> =
+        BaseResponse.ok(authService.googleLogin(req))
+
+    @PostMapping("/facebook")
+    fun facebook(@Valid @RequestBody req: OAuthTokenRequest): BaseResponse<AuthResponseData> =
+        BaseResponse.ok(authService.facebookLogin(req))
+
     @ExceptionHandler(AuthException::class)
     fun handleAuth(ex: AuthException): ResponseEntity<BaseResponse<Nothing>> =
         ResponseEntity.status(HttpStatus.UNAUTHORIZED)

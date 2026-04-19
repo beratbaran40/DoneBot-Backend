@@ -15,7 +15,24 @@ class GroupService(
     private val members: GroupMemberRepository,
     private val users: UserRepository,
     private val tasks: TaskRepository,
+    private val activities: GroupActivityRepository,
 ) {
+    private fun logActivity(
+        groupId: Long,
+        actorUserId: Long,
+        type: GroupActivityType,
+        description: String,
+    ) {
+        activities.save(
+            GroupActivityEntity(
+                groupId = groupId,
+                actorUserId = actorUserId,
+                type = type.name,
+                description = description,
+            )
+        )
+    }
+
     @Transactional
     fun create(creatorId: Long, req: CreateGroupRequest): GroupData {
         val saved = groups.save(GroupEntity(name = req.name, description = req.description, ownerId = creatorId))
@@ -80,6 +97,7 @@ class GroupService(
             throw ResponseStatusException(HttpStatus.CONFLICT, "User already a member")
         }
         members.save(GroupMemberEntity(groupId = req.groupId, userId = invitee.id, role = GroupRole.MEMBER.name))
+        logActivity(req.groupId, userId, GroupActivityType.MEMBER_ADDED, "Added ${invitee.displayName} to the group")
     }
 
     @Transactional
@@ -88,7 +106,9 @@ class GroupService(
         if (memberUserId == userId) {
             throw ResponseStatusException(HttpStatus.BAD_REQUEST, "Use transfer-ownership to leave as admin")
         }
+        val name = users.findById(memberUserId).orElse(null)?.displayName ?: "user"
         members.deleteByGroupIdAndUserId(groupId, memberUserId)
+        logActivity(groupId, userId, GroupActivityType.MEMBER_REMOVED, "Removed $name from the group")
     }
 
     @Transactional
@@ -106,6 +126,8 @@ class GroupService(
         val group = groups.findById(groupId).get()
         group.ownerId = req.userId
         groups.save(group)
+        val newOwnerName = users.findById(req.userId).orElse(null)?.displayName ?: "user"
+        logActivity(groupId, userId, GroupActivityType.OWNERSHIP_TRANSFERRED, "Transferred ownership to $newOwnerName")
     }
 
     fun requireMember(groupId: Long, userId: Long): GroupMemberEntity =
