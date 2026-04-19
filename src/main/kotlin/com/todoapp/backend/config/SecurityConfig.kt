@@ -6,7 +6,6 @@ import org.springframework.security.config.Customizer
 import org.springframework.security.config.annotation.web.builders.HttpSecurity
 import org.springframework.security.config.http.SessionCreationPolicy
 import org.springframework.security.web.SecurityFilterChain
-import org.springframework.security.web.util.matcher.AntPathRequestMatcher
 
 @Configuration
 class SecurityConfig {
@@ -19,12 +18,12 @@ class SecurityConfig {
             .authorizeHttpRequests { auth ->
                 auth
                     .requestMatchers(
-                        AntPathRequestMatcher("/swagger-ui/**"),
-                        AntPathRequestMatcher("/swagger-ui.html"),
-                        AntPathRequestMatcher("/v3/api-docs/**"),
-                        AntPathRequestMatcher("/h2-console/**"),
-                        AntPathRequestMatcher("/auth/**"),
-                        AntPathRequestMatcher("/actuator/health"),
+                        "/swagger-ui/**",
+                        "/swagger-ui.html",
+                        "/v3/api-docs/**",
+                        "/h2-console/**",
+                        "/auth/**",
+                        "/actuator/health",
                     ).permitAll()
                     .anyRequest().authenticated()
             }
