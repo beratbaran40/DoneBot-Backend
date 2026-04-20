@@ -66,13 +66,37 @@ class GroupTaskService(
 
     @Transactional
     fun update(callerId: Long, groupId: Long, taskId: Long, req: GroupTaskUpdateRequest): GroupTaskData {
-        groupService.requireMember(groupId, callerId)
+        val membership = groupService.requireMember(groupId, callerId)
+        val isAdmin = membership.role.uppercase() == GroupRole.ADMIN.name
         val task = tasks.findById(taskId).orElseThrow {
             ResponseStatusException(HttpStatus.NOT_FOUND, "Task not found")
         }
         if (task.familyGroupId != groupId) {
             throw ResponseStatusException(HttpStatus.NOT_FOUND, "Task not in this group")
         }
+        val isAssignee = task.assignedToUserId == callerId
+
+        // Permission rules:
+        // - Editing fields (title/description/dueDate/priority): admin only.
+        // - Reassigning to another user: admin only.
+        // - Self-unassign (clearAssignee when caller is the current assignee): allowed.
+        // - Self-assign (assigneeId == callerId on an unassigned task): allowed.
+        // - Toggling isCompleted: admin OR the current assignee.
+        val editingFields = req.title != null || req.description != null ||
+            req.dueDate != null || req.priority != null
+        if (editingFields && !isAdmin) {
+            throw ResponseStatusException(HttpStatus.FORBIDDEN, "Only admins can edit tasks")
+        }
+        if (req.clearAssignee && !isAdmin && !isAssignee) {
+            throw ResponseStatusException(HttpStatus.FORBIDDEN, "Only admins or the current assignee can unassign")
+        }
+        if (req.assigneeId != null && !isAdmin && req.assigneeId != callerId) {
+            throw ResponseStatusException(HttpStatus.FORBIDDEN, "Only admins can assign tasks to other members")
+        }
+        if (req.isCompleted != null && !isAdmin && !isAssignee) {
+            throw ResponseStatusException(HttpStatus.FORBIDDEN, "Only the assignee or an admin can complete this task")
+        }
+
         val priorAssignee = task.assignedToUserId
         val priorCompleted = task.isCompleted
         req.title?.let { task.title = it }
