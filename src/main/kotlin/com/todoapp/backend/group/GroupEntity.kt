@@ -1,11 +1,14 @@
 package com.todoapp.backend.group
 
+import jakarta.persistence.Basic
 import jakarta.persistence.Column
 import jakarta.persistence.Entity
+import jakarta.persistence.FetchType
 import jakarta.persistence.GeneratedValue
 import jakarta.persistence.GenerationType
 import jakarta.persistence.Id
 import jakarta.persistence.Index
+import jakarta.persistence.Lob
 import jakarta.persistence.Table
 import java.time.Instant
 
@@ -32,6 +35,14 @@ class GroupEntity(
 
     @Column(nullable = false)
     var updatedAt: Instant = Instant.now(),
+
+    @Lob
+    @Basic(fetch = FetchType.LAZY)
+    @Column(name = "avatar_bytes", nullable = true)
+    var avatarBytes: ByteArray? = null,
+
+    @Column(name = "avatar_content_type", nullable = true, length = 64)
+    var avatarContentType: String? = null,
 )
 
 @Entity

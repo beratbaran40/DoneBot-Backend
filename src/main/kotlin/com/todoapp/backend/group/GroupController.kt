@@ -92,4 +92,21 @@ class GroupController(
     @GetMapping("/{groupId}/activity")
     fun activity(@PathVariable groupId: Long): BaseResponse<GroupActivityListData> =
         BaseResponse.ok(activityService.list(CurrentUser.id(), groupId))
+
+    @org.springframework.web.bind.annotation.PostMapping(
+        "/{groupId}/avatar",
+        consumes = [org.springframework.http.MediaType.MULTIPART_FORM_DATA_VALUE],
+    )
+    @org.springframework.transaction.annotation.Transactional
+    fun uploadAvatar(
+        @PathVariable groupId: Long,
+        @org.springframework.web.bind.annotation.RequestPart("file") file: org.springframework.web.multipart.MultipartFile,
+    ): BaseResponse<GroupData> {
+        val result = service.uploadAvatar(CurrentUser.id(), groupId, file)
+        return BaseResponse.ok(result)
+    }
+
+    @GetMapping("/{groupId}/avatar")
+    fun getAvatar(@PathVariable groupId: Long): org.springframework.http.ResponseEntity<ByteArray> =
+        service.getAvatarBytes(CurrentUser.id(), groupId)
 }

@@ -51,6 +51,7 @@ class GroupService(
                 id = group.id,
                 name = group.name,
                 description = group.description,
+                avatarUrl = if (group.avatarBytes != null) "/family-groups/${group.id}/avatar" else null,
                 role = membership.role,
                 memberCount = members.countByGroupId(group.id).toInt(),
                 pendingTaskCount = tasks.findAllByFamilyGroupId(group.id).count { !it.isCompleted },
@@ -130,6 +131,32 @@ class GroupService(
         logActivity(groupId, userId, GroupActivityType.OWNERSHIP_TRANSFERRED, "Transferred ownership to $newOwnerName")
     }
 
+    @Transactional
+    fun uploadAvatar(callerId: Long, groupId: Long, file: org.springframework.web.multipart.MultipartFile): GroupData {
+        requireAdmin(groupId, callerId)
+        if (file.isEmpty) throw ResponseStatusException(HttpStatus.BAD_REQUEST, "Empty file")
+        val ct = file.contentType ?: "application/octet-stream"
+        if (!ct.startsWith("image/")) throw ResponseStatusException(HttpStatus.BAD_REQUEST, "File must be an image")
+        if (file.size > 2L * 1024 * 1024) throw ResponseStatusException(HttpStatus.PAYLOAD_TOO_LARGE, "Image too large (max 2MB)")
+        val group = groups.findById(groupId).orElseThrow { ResponseStatusException(HttpStatus.NOT_FOUND, "Group not found") }
+        group.avatarBytes = file.bytes
+        group.avatarContentType = ct
+        group.updatedAt = Instant.now()
+        return groups.save(group).toData()
+    }
+
+    @Transactional(readOnly = true)
+    fun getAvatarBytes(callerId: Long, groupId: Long): org.springframework.http.ResponseEntity<ByteArray> {
+        requireMember(groupId, callerId)
+        val group = groups.findById(groupId).orElseThrow { ResponseStatusException(HttpStatus.NOT_FOUND, "Group not found") }
+        val bytes = group.avatarBytes ?: throw ResponseStatusException(HttpStatus.NOT_FOUND, "No avatar")
+        val type = group.avatarContentType ?: org.springframework.http.MediaType.IMAGE_JPEG_VALUE
+        return org.springframework.http.ResponseEntity.ok()
+            .contentType(org.springframework.http.MediaType.parseMediaType(type))
+            .header("Cache-Control", "public, max-age=300")
+            .body(bytes)
+    }
+
     fun requireMember(groupId: Long, userId: Long): GroupMemberEntity =
         members.findByGroupIdAndUserId(groupId, userId)
             ?: throw ResponseStatusException(HttpStatus.FORBIDDEN, "Not a member of this group")
@@ -149,6 +176,7 @@ class GroupService(
             id = id,
             name = name,
             description = description,
+            avatarUrl = if (avatarBytes != null) "/family-groups/$id/avatar" else null,
             createdAt = createdAt.toEpochMilli(),
             updatedAt = updatedAt.toEpochMilli(),
             members = memberDtos,
