@@ -187,7 +187,7 @@ class GroupService(
         userId = id,
         displayName = displayName,
         email = email,
-        avatarUrl = avatarUrl,
+        avatarUrl = if (avatarBytes != null) "/users/$id/avatar" else avatarUrl,
         role = m.role,
         joinedAt = m.joinedAt.toEpochMilli(),
     )

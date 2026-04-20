@@ -189,7 +189,7 @@ class GroupTaskService(
                 userId = u.id,
                 displayName = u.displayName,
                 email = u.email,
-                avatarUrl = u.avatarUrl,
+                avatarUrl = if (u.avatarBytes != null) "/users/${u.id}/avatar" else u.avatarUrl,
                 role = m?.role ?: GroupRole.MEMBER.name,
                 joinedAt = m?.joinedAt?.toEpochMilli() ?: 0L,
             )

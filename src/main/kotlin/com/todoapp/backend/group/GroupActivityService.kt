@@ -57,7 +57,7 @@ class GroupActivityService(
                 id = e.id,
                 type = e.type,
                 actorName = actor?.displayName ?: "Unknown",
-                actorAvatarUrl = actor?.avatarUrl,
+                actorAvatarUrl = actor?.let { if (it.avatarBytes != null) "/users/${it.id}/avatar" else it.avatarUrl },
                 description = e.description,
                 timestamp = e.timestamp.toEpochMilli(),
                 taskTitle = e.taskTitle,
