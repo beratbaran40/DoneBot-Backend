@@ -39,6 +39,7 @@ class SecurityConfig {
                         "/auth/**",
                         "/actuator/health",
                     ).permitAll()
+                    .requestMatchers(org.springframework.http.HttpMethod.GET, "/users/*/avatar").permitAll()
                     .anyRequest().authenticated()
             }
             .headers { it.frameOptions { fo -> fo.sameOrigin() } }

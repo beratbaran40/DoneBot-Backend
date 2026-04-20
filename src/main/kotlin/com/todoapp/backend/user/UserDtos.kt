@@ -1,5 +1,8 @@
 package com.todoapp.backend.user
 
+import jakarta.validation.constraints.NotBlank
+import jakarta.validation.constraints.Size
+
 data class UserData(
     val id: Long,
     val email: String,
@@ -10,11 +13,15 @@ data class UserData(
     val createdAt: String,
 )
 
+data class UpdateUserRequest(
+    @field:NotBlank @field:Size(min = 1, max = 64) val displayName: String,
+)
+
 fun UserEntity.toDto(): UserData = UserData(
     id = id,
     email = email,
     displayName = displayName,
-    avatarUrl = avatarUrl,
+    avatarUrl = if (avatarBytes != null) "/users/$id/avatar" else avatarUrl,
     emailVerified = emailVerified,
     providers = providers,
     createdAt = createdAt.toString(),
