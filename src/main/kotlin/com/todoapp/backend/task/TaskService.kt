@@ -53,6 +53,22 @@ class TaskService(
     }
 
     @Transactional(readOnly = true)
+    fun getById(callerId: Long, taskId: Long): TaskData {
+        val task = tasks.findById(taskId).orElseThrow {
+            org.springframework.web.server.ResponseStatusException(
+                org.springframework.http.HttpStatus.NOT_FOUND, "Task not found"
+            )
+        }
+        // Permission: owner for personal; any member for group tasks (enforced by familyGroupId presence — members see shared tasks via the group endpoints). Here we require the caller to own the task.
+        if (task.ownerId != callerId && task.assignedToUserId != callerId) {
+            throw org.springframework.web.server.ResponseStatusException(
+                org.springframework.http.HttpStatus.FORBIDDEN, "Not allowed"
+            )
+        }
+        return task.toData()
+    }
+
+    @Transactional(readOnly = true)
     fun list(ownerId: Long, familyGroupId: Long?): TaskListData {
         val list = if (familyGroupId == null) {
             tasks.findAllByOwnerIdAndFamilyGroupIdIsNull(ownerId)

@@ -29,6 +29,10 @@ class TaskController(private val service: TaskService) {
     fun list(@RequestParam(required = false) familyGroupId: Long?): BaseResponse<TaskListData> =
         BaseResponse.ok(service.list(CurrentUser.id(), familyGroupId))
 
+    @GetMapping("/{id}")
+    fun getById(@PathVariable id: Long): BaseResponse<TaskData> =
+        BaseResponse.ok(service.getById(CurrentUser.id(), id))
+
     @DeleteMapping("/{id}")
     fun delete(@PathVariable id: Long): BaseResponse<Unit> {
         service.delete(CurrentUser.id(), id)
