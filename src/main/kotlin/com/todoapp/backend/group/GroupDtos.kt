@@ -94,6 +94,7 @@ data class GroupTaskData(
     val priority: String?,
     val dueDate: Long?,
     val assignee: GroupMemberData?,
+    val photoUrls: List<String> = emptyList(),
 )
 
 data class GroupTaskListData(

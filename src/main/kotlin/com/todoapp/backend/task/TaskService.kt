@@ -10,6 +10,7 @@ import org.springframework.web.server.ResponseStatusException
 class TaskService(
     private val tasks: TaskRepository,
     private val users: UserRepository,
+    private val photos: TaskPhotoRepository,
 ) {
     @Transactional
     fun create(ownerId: Long, req: TaskRequest): TaskData {
@@ -78,6 +79,7 @@ class TaskService(
             users.findById(uid).orElse(null)?.let { TaskUserData(it.id, it.displayName) }
         }
         val creator = users.findById(ownerId).orElse(null)?.let { TaskUserData(it.id, it.displayName) }
+        val urls = photos.findAllByTaskIdOrderByCreatedAtAsc(id).map { "/tasks/$id/photos/${it.id}" }
         return TaskData(
             id = id,
             title = title,
@@ -91,6 +93,7 @@ class TaskService(
             createdBy = creator,
             familyGroupId = familyGroupId,
             priority = priority,
+            photoUrls = urls,
         )
     }
 }

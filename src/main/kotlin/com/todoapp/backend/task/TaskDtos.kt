@@ -34,6 +34,7 @@ data class TaskData(
     val createdBy: TaskUserData?,
     val familyGroupId: Long?,
     val priority: String?,
+    val photoUrls: List<String> = emptyList(),
 )
 
 data class TaskListData(

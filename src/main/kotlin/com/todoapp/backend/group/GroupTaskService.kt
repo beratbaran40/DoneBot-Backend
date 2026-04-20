@@ -1,6 +1,7 @@
 package com.todoapp.backend.group
 
 import com.todoapp.backend.task.TaskEntity
+import com.todoapp.backend.task.TaskPhotoRepository
 import com.todoapp.backend.task.TaskRepository
 import com.todoapp.backend.user.UserRepository
 import org.springframework.http.HttpStatus
@@ -19,6 +20,7 @@ class GroupTaskService(
     private val groupService: GroupService,
     private val activity: GroupActivityService,
     private val push: com.todoapp.backend.notif.PushService,
+    private val photos: TaskPhotoRepository,
 ) {
     @Transactional(readOnly = true)
     fun list(callerId: Long, groupId: Long): GroupTaskListData {
@@ -192,6 +194,7 @@ class GroupTaskService(
                 joinedAt = m?.joinedAt?.toEpochMilli() ?: 0L,
             )
         }
+        val urls = photos.findAllByTaskIdOrderByCreatedAtAsc(id).map { "/tasks/$id/photos/${it.id}" }
         return GroupTaskData(
             id = id,
             title = title,
@@ -200,6 +203,7 @@ class GroupTaskService(
             priority = priority,
             dueDate = joinDueDate(date, timeStart),
             assignee = assignee,
+            photoUrls = urls,
         )
     }
 }
