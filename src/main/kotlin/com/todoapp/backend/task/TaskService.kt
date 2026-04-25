@@ -1,5 +1,7 @@
 package com.todoapp.backend.task
 
+import com.todoapp.backend.notif.NotificationPublisher
+import com.todoapp.backend.notif.inbox.NotificationType
 import com.todoapp.backend.user.UserRepository
 import org.springframework.http.HttpStatus
 import org.springframework.stereotype.Service
@@ -11,6 +13,7 @@ class TaskService(
     private val tasks: TaskRepository,
     private val users: UserRepository,
     private val photos: TaskPhotoRepository,
+    private val publisher: NotificationPublisher,
 ) {
     @Transactional
     fun create(ownerId: Long, req: TaskRequest): TaskData {
@@ -27,7 +30,13 @@ class TaskService(
             assignedToUserId = req.assignedToUserId,
             priority = req.priority,
         )
-        return tasks.save(entity).toData()
+        val saved = tasks.save(entity)
+        notifyAssignmentIfNeeded(
+            actorId = ownerId,
+            previousAssigneeId = null,
+            saved = saved,
+        )
+        return saved.toData()
     }
 
     @Transactional
@@ -39,6 +48,7 @@ class TaskService(
         if (entity.ownerId != ownerId && entity.assignedToUserId != ownerId) {
             throw ResponseStatusException(HttpStatus.FORBIDDEN, "Not allowed")
         }
+        val previousAssigneeId = entity.assignedToUserId
         entity.title = req.title
         entity.description = req.description
         entity.date = req.date
@@ -49,7 +59,41 @@ class TaskService(
         entity.priority = req.priority
         // assignedToUserId: null = clear, non-null = set. (For personal tasks this is rare.)
         entity.assignedToUserId = req.assignedToUserId
-        return tasks.save(entity).toData()
+        val saved = tasks.save(entity)
+        notifyAssignmentIfNeeded(
+            actorId = ownerId,
+            previousAssigneeId = previousAssigneeId,
+            saved = saved,
+        )
+        return saved.toData()
+    }
+
+    /**
+     * Fires TASK_ASSIGNED to the new assignee when a group task gets a different assignee.
+     * Mirrors GroupTaskService — the Android client currently routes group-task creates through
+     * POST /tasks (with familyGroupId set), bypassing the dedicated /family-groups endpoint, so
+     * the assignment notification must also fire from this path.
+     */
+    private fun notifyAssignmentIfNeeded(
+        actorId: Long,
+        previousAssigneeId: Long?,
+        saved: TaskEntity,
+    ) {
+        val newAssigneeId = saved.assignedToUserId ?: return
+        val groupId = saved.familyGroupId ?: return
+        if (newAssigneeId == previousAssigneeId) return
+        if (newAssigneeId == actorId) return
+        publisher.publish(
+            userIds = listOf(newAssigneeId),
+            type = NotificationType.TASK_ASSIGNED,
+            title = "New task assigned",
+            body = "${saved.title} was assigned to you",
+            payload = mapOf(
+                "taskId" to saved.id.toString(),
+                "groupId" to groupId.toString(),
+                "taskTitle" to saved.title,
+            ),
+        )
     }
 
     @Transactional(readOnly = true)
