@@ -71,6 +71,7 @@ class InvitationService(
             )
         )
         val inviter = users.findById(callerId).orElse(null)
+        val memberCount = members.countByGroupId(group.id).toInt()
         publisher.publish(
             userIds = listOf(invitee.id),
             type = NotificationType.INVITATION_RECEIVED,
@@ -80,6 +81,8 @@ class InvitationService(
                 "invitationId" to saved.id.toString(),
                 "groupId" to group.id.toString(),
                 "groupName" to group.name,
+                "groupDescription" to group.description,
+                "memberCount" to memberCount.toString(),
                 "inviterName" to (inviter?.displayName ?: ""),
             ),
         )
