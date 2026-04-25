@@ -5,11 +5,14 @@ import com.todoapp.backend.auth.oauth.GoogleAuthService
 import com.todoapp.backend.user.UserEntity
 import com.todoapp.backend.user.UserRepository
 import com.todoapp.backend.user.toDto
+import org.slf4j.LoggerFactory
+import org.springframework.beans.factory.annotation.Value
 import org.springframework.security.crypto.password.PasswordEncoder
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
 import java.security.MessageDigest
 import java.security.SecureRandom
+import java.time.Duration
 import java.time.Instant
 import java.util.Base64
 
@@ -19,11 +22,16 @@ class AuthException(msg: String) : RuntimeException(msg)
 class AuthService(
     private val users: UserRepository,
     private val refreshTokens: RefreshTokenRepository,
+    private val passwordResets: PasswordResetRepository,
     private val jwtService: JwtService,
     private val passwordEncoder: PasswordEncoder,
     private val google: GoogleAuthService,
     private val facebook: FacebookAuthService,
+    private val mailService: MailService,
+    @Value("\${app.password-reset.deep-link}") private val resetDeepLink: String,
+    @Value("\${app.password-reset.ttl-minutes}") private val resetTtlMinutes: Long,
 ) {
+    private val log = LoggerFactory.getLogger(AuthService::class.java)
     private val rng = SecureRandom()
 
     @Transactional
@@ -92,6 +100,55 @@ class AuthService(
         val user = users.findById(record.userId).orElseThrow { AuthException("User not found") }
         val pair = issueTokenPair(user)
         return RefreshTokenData(pair.accessToken, pair.refreshToken, pair.expiresIn)
+    }
+
+    @Transactional
+    fun forgotPassword(req: ForgotPasswordRequest) {
+        val user = users.findByEmail(req.email.trim())
+        if (user == null) {
+            // Do not reveal account existence.
+            log.info("forgotPassword: no account for {}", req.email)
+            return
+        }
+        if (user.passwordHash == null) {
+            // Social-only account — no password to reset. Still succeed silently.
+            log.info("forgotPassword: user {} has no password (oauth-only)", user.id)
+            return
+        }
+        // Invalidate previous unused tokens for this user.
+        passwordResets.deleteAllByUserId(user.id)
+        val rawToken = randomToken()
+        passwordResets.save(
+            PasswordResetEntity(
+                userId = user.id,
+                tokenHash = sha256(rawToken),
+                expiresAt = Instant.now().plus(Duration.ofMinutes(resetTtlMinutes)),
+            )
+        )
+        val link = if (resetDeepLink.contains("?")) {
+            "$resetDeepLink&token=$rawToken"
+        } else {
+            "$resetDeepLink?token=$rawToken"
+        }
+        try {
+            mailService.sendPasswordReset(user.email, user.displayName, link)
+        } catch (ex: Exception) {
+            log.error("Failed to send reset email to {}", user.email, ex)
+        }
+    }
+
+    @Transactional
+    fun resetPassword(req: ResetPasswordRequest) {
+        val record = passwordResets.findByTokenHash(sha256(req.token))
+            ?: throw AuthException("Invalid or expired reset link")
+        if (record.usedAt != null) throw AuthException("Reset link already used")
+        if (record.expiresAt.isBefore(Instant.now())) throw AuthException("Reset link expired")
+        val user = users.findById(record.userId).orElseThrow { AuthException("User not found") }
+        user.passwordHash = passwordEncoder.encode(req.newPassword)
+        users.save(user)
+        record.usedAt = Instant.now()
+        passwordResets.save(record)
+        refreshTokens.revokeAllByUserId(user.id)
     }
 
     private fun issueTokenPair(user: UserEntity): AuthResponseData {

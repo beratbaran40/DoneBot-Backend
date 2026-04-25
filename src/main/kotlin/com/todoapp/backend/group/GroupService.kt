@@ -16,6 +16,7 @@ class GroupService(
     private val users: UserRepository,
     private val tasks: TaskRepository,
     private val activities: GroupActivityRepository,
+    private val invitations: InvitationService,
 ) {
     private fun logActivity(
         groupId: Long,
@@ -89,17 +90,7 @@ class GroupService(
         groups.deleteById(groupId)
     }
 
-    @Transactional
-    fun invite(userId: Long, req: InviteMemberRequest) {
-        requireAdmin(req.groupId, userId)
-        val invitee = users.findByEmail(req.email)
-            ?: throw ResponseStatusException(HttpStatus.NOT_FOUND, "User with email not found")
-        if (members.findByGroupIdAndUserId(req.groupId, invitee.id) != null) {
-            throw ResponseStatusException(HttpStatus.CONFLICT, "User already a member")
-        }
-        members.save(GroupMemberEntity(groupId = req.groupId, userId = invitee.id, role = GroupRole.MEMBER.name))
-        logActivity(req.groupId, userId, GroupActivityType.MEMBER_ADDED, "Added ${invitee.displayName} to the group")
-    }
+    fun invite(userId: Long, req: InviteMemberRequest): InvitationData = invitations.invite(userId, req)
 
     @Transactional
     fun removeMember(userId: Long, groupId: Long, memberUserId: Long) {

@@ -17,6 +17,11 @@ data class UpdateUserRequest(
     @field:NotBlank @field:Size(min = 1, max = 64) val displayName: String,
 )
 
+data class ChangePasswordRequest(
+    @field:NotBlank val currentPassword: String,
+    @field:NotBlank @field:Size(min = 8, max = 128) val newPassword: String,
+)
+
 fun UserEntity.toDto(): UserData = UserData(
     id = id,
     email = email,

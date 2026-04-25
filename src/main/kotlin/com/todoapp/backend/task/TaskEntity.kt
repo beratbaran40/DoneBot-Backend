@@ -59,4 +59,7 @@ class TaskEntity(
 
     @Column(nullable = false, updatable = false)
     var createdAt: Instant = Instant.now(),
+
+    @Column(name = "due_soon_notified_at")
+    var dueSoonNotifiedAt: Instant? = null,
 )

@@ -36,3 +36,12 @@ data class RefreshTokenData(
     val refreshToken: String,
     val expiresIn: Long,
 )
+
+data class ForgotPasswordRequest(
+    @field:Email val email: String,
+)
+
+data class ResetPasswordRequest(
+    @field:NotBlank val token: String,
+    @field:NotBlank @field:Size(min = 8, max = 128) val newPassword: String,
+)

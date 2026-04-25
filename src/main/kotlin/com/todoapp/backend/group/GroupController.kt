@@ -42,10 +42,8 @@ class GroupController(
     }
 
     @PostMapping("/members")
-    fun invite(@Valid @RequestBody req: InviteMemberRequest): BaseResponse<Unit> {
-        service.invite(CurrentUser.id(), req)
-        return BaseResponse.ok()
-    }
+    fun invite(@Valid @RequestBody req: InviteMemberRequest): BaseResponse<InvitationData> =
+        BaseResponse.ok(service.invite(CurrentUser.id(), req))
 
     @DeleteMapping("/members/{groupId}/{userId}")
     fun removeMember(@PathVariable groupId: Long, @PathVariable userId: Long): BaseResponse<Unit> {

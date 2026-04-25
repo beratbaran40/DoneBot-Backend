@@ -1,5 +1,7 @@
 package com.todoapp.backend.group
 
+import com.todoapp.backend.notif.NotificationPublisher
+import com.todoapp.backend.notif.inbox.NotificationType
 import com.todoapp.backend.task.TaskEntity
 import com.todoapp.backend.task.TaskPhotoRepository
 import com.todoapp.backend.task.TaskRepository
@@ -19,7 +21,7 @@ class GroupTaskService(
     private val users: UserRepository,
     private val groupService: GroupService,
     private val activity: GroupActivityService,
-    private val push: com.todoapp.backend.notif.PushService,
+    private val publisher: NotificationPublisher,
     private val photos: TaskPhotoRepository,
 ) {
     @Transactional(readOnly = true)
@@ -56,12 +58,18 @@ class GroupTaskService(
             activity.log(groupId, callerId, GroupActivityType.TASK_ASSIGNED,
                 description = "Assigned “${entity.title}” to $assigneeName",
                 taskId = entity.id, taskTitle = entity.title)
-            push.sendToUsers(
-                listOf(entity.assignedToUserId!!),
-                title = "New task assigned",
-                body = "${entity.title} was assigned to you",
-                data = mapOf("taskId" to entity.id.toString(), "groupId" to groupId.toString()),
-            )
+            if (entity.assignedToUserId != callerId) {
+                publisher.publish(
+                    userIds = listOf(entity.assignedToUserId!!),
+                    type = NotificationType.TASK_ASSIGNED,
+                    title = "New task assigned",
+                    body = "${entity.title} was assigned to you",
+                    payload = mapOf(
+                        "taskId" to entity.id.toString(),
+                        "groupId" to groupId.toString(),
+                    ),
+                )
+            }
         }
         return entity.toDto()
     }
@@ -126,17 +134,36 @@ class GroupTaskService(
                 val name = users.findById(saved.assignedToUserId!!).orElse(null)?.displayName ?: "?"
                 activity.log(groupId, callerId, GroupActivityType.TASK_ASSIGNED,
                     description = "Assigned “${saved.title}” to $name", taskId = saved.id, taskTitle = saved.title)
-                push.sendToUsers(
-                    listOf(saved.assignedToUserId!!),
-                    title = "Task assigned to you",
-                    body = "${saved.title} was assigned to you",
-                    data = mapOf("taskId" to saved.id.toString(), "groupId" to groupId.toString()),
-                )
+                if (saved.assignedToUserId != callerId) {
+                    publisher.publish(
+                        userIds = listOf(saved.assignedToUserId!!),
+                        type = NotificationType.TASK_ASSIGNED,
+                        title = "Task assigned to you",
+                        body = "${saved.title} was assigned to you",
+                        payload = mapOf(
+                            "taskId" to saved.id.toString(),
+                            "groupId" to groupId.toString(),
+                        ),
+                    )
+                }
             }
         }
         if (!priorCompleted && saved.isCompleted) {
             activity.log(groupId, callerId, GroupActivityType.TASK_COMPLETED,
                 description = "Completed “${saved.title}”", taskId = saved.id, taskTitle = saved.title)
+            if (saved.ownerId != callerId) {
+                val actorName = users.findById(callerId).orElse(null)?.displayName ?: "Someone"
+                publisher.publish(
+                    userIds = listOf(saved.ownerId),
+                    type = NotificationType.TASK_COMPLETED,
+                    title = "Task completed",
+                    body = "$actorName completed “${saved.title}”",
+                    payload = mapOf(
+                        "taskId" to saved.id.toString(),
+                        "groupId" to groupId.toString(),
+                    ),
+                )
+            }
         } else if (req.title != null || req.description != null || req.dueDate != null || req.priority != null) {
             activity.log(groupId, callerId, GroupActivityType.TASK_UPDATED,
                 description = "Updated “${saved.title}”", taskId = saved.id, taskTitle = saved.title)

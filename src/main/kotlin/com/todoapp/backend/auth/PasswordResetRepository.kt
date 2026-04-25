@@ -7,10 +7,10 @@ import org.springframework.data.repository.query.Param
 import org.springframework.stereotype.Repository
 
 @Repository
-interface RefreshTokenRepository : JpaRepository<RefreshTokenEntity, Long> {
-    fun findByTokenHash(tokenHash: String): RefreshTokenEntity?
+interface PasswordResetRepository : JpaRepository<PasswordResetEntity, Long> {
+    fun findByTokenHash(tokenHash: String): PasswordResetEntity?
 
     @Modifying
-    @Query("UPDATE RefreshTokenEntity r SET r.revoked = true WHERE r.userId = :userId AND r.revoked = false")
-    fun revokeAllByUserId(@Param("userId") userId: Long)
+    @Query("DELETE FROM PasswordResetEntity p WHERE p.userId = :userId")
+    fun deleteAllByUserId(@Param("userId") userId: Long)
 }

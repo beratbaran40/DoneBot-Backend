@@ -34,6 +34,18 @@ class AuthController(private val authService: AuthService) {
     fun facebook(@Valid @RequestBody req: OAuthTokenRequest): BaseResponse<AuthResponseData> =
         BaseResponse.ok(authService.facebookLogin(req))
 
+    @PostMapping("/forgot-password")
+    fun forgotPassword(@Valid @RequestBody req: ForgotPasswordRequest): BaseResponse<Unit> {
+        authService.forgotPassword(req)
+        return BaseResponse.ok(Unit)
+    }
+
+    @PostMapping("/reset-password")
+    fun resetPassword(@Valid @RequestBody req: ResetPasswordRequest): BaseResponse<Unit> {
+        authService.resetPassword(req)
+        return BaseResponse.ok(Unit)
+    }
+
     @ExceptionHandler(AuthException::class)
     fun handleAuth(ex: AuthException): ResponseEntity<BaseResponse<Nothing>> =
         ResponseEntity.status(HttpStatus.UNAUTHORIZED)
