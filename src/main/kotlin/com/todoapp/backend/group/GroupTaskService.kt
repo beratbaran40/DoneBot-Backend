@@ -67,6 +67,7 @@ class GroupTaskService(
                     payload = mapOf(
                         "taskId" to entity.id.toString(),
                         "groupId" to groupId.toString(),
+                        "taskTitle" to entity.title,
                     ),
                 )
             }
@@ -143,6 +144,7 @@ class GroupTaskService(
                         payload = mapOf(
                             "taskId" to saved.id.toString(),
                             "groupId" to groupId.toString(),
+                            "taskTitle" to saved.title,
                         ),
                     )
                 }
@@ -161,6 +163,8 @@ class GroupTaskService(
                     payload = mapOf(
                         "taskId" to saved.id.toString(),
                         "groupId" to groupId.toString(),
+                        "taskTitle" to saved.title,
+                        "actorName" to actorName,
                     ),
                 )
             }

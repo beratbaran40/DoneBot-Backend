@@ -50,6 +50,8 @@ class TaskDueSoonJob(
                 payload = mapOf(
                     "groupId" to group.id.toString(),
                     "taskId" to task.id.toString(),
+                    "taskTitle" to task.title,
+                    "groupName" to group.name,
                 ),
             )
             task.dueSoonNotifiedAt = now

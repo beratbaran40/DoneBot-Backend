@@ -141,6 +141,7 @@ class InvitationService(
             body = "${acceptor?.displayName ?: "Someone"} joined ${group.name}",
             payload = mapOf(
                 "groupId" to group.id.toString(),
+                "groupName" to group.name,
                 "acceptorName" to (acceptor?.displayName ?: ""),
             ),
         )
@@ -167,6 +168,7 @@ class InvitationService(
                 body = "${decliner?.displayName ?: "Someone"} declined to join ${group.name}",
                 payload = mapOf(
                     "groupId" to group.id.toString(),
+                    "groupName" to group.name,
                     "declinerName" to (decliner?.displayName ?: ""),
                 ),
             )
