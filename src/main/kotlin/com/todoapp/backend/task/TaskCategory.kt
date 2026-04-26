@@ -1,12 +1,12 @@
 package com.todoapp.backend.task
 
 enum class TaskCategory {
-    DAILY,
     SHOPPING,
     MEDICINE,
     HEALTH,
     WORK,
     STUDY,
+    BIRTHDAY,
     PERSONAL,
     OTHER,
 }

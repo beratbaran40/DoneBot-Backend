@@ -17,6 +17,7 @@ data class TaskRequest(
     val priority: String? = null,
     val category: TaskCategory? = null,
     @field:Size(max = 64) val customCategoryName: String? = null,
+    val recurrence: Recurrence? = null,
 )
 
 data class TaskUserData(
@@ -39,6 +40,7 @@ data class TaskData(
     val priority: String?,
     val category: TaskCategory,
     val customCategoryName: String?,
+    val recurrence: Recurrence,
     val photoUrls: List<String> = emptyList(),
 )
 

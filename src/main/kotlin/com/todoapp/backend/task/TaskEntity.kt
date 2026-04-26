@@ -66,6 +66,10 @@ class TaskEntity(
     @Column(name = "custom_category_name", length = 64)
     var customCategoryName: String? = null,
 
+    @Enumerated(EnumType.STRING)
+    @Column(name = "recurrence", nullable = false, length = 16)
+    var recurrence: Recurrence = Recurrence.NONE,
+
     @Column(nullable = false, updatable = false)
     var createdAt: Instant = Instant.now(),
 

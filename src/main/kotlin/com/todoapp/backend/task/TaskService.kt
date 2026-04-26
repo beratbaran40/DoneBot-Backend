@@ -33,6 +33,7 @@ class TaskService(
             priority = req.priority,
             category = category,
             customCategoryName = if (category == TaskCategory.OTHER) req.customCategoryName?.takeIf { it.isNotBlank() } else null,
+            recurrence = req.recurrence ?: Recurrence.NONE,
         )
         val saved = tasks.save(entity)
         notifyAssignmentIfNeeded(
@@ -70,6 +71,7 @@ class TaskService(
         } else {
             null
         }
+        entity.recurrence = req.recurrence ?: entity.recurrence
         val saved = tasks.save(entity)
         notifyAssignmentIfNeeded(
             actorId = ownerId,
@@ -166,6 +168,7 @@ class TaskService(
             priority = priority,
             category = category,
             customCategoryName = customCategoryName,
+            recurrence = recurrence,
             photoUrls = urls,
         )
     }
@@ -178,7 +181,7 @@ class TaskService(
         if (task.ownerId != callerId) {
             throw ResponseStatusException(HttpStatus.FORBIDDEN, "Not allowed")
         }
-        if (task.category != TaskCategory.DAILY) {
+        if (task.recurrence != Recurrence.DAILY) {
             throw ResponseStatusException(HttpStatus.BAD_REQUEST, "Task is not a daily task")
         }
         if (req.completed) {
