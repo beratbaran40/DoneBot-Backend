@@ -14,9 +14,11 @@ class TaskService(
     private val users: UserRepository,
     private val photos: TaskPhotoRepository,
     private val publisher: NotificationPublisher,
+    private val dailyCompletions: TaskDailyCompletionRepository,
 ) {
     @Transactional
     fun create(ownerId: Long, req: TaskRequest): TaskData {
+        val category = req.category ?: TaskCategory.PERSONAL
         val entity = TaskEntity(
             ownerId = ownerId,
             title = req.title,
@@ -29,6 +31,8 @@ class TaskService(
             familyGroupId = req.familyGroupId,
             assignedToUserId = req.assignedToUserId,
             priority = req.priority,
+            category = category,
+            customCategoryName = if (category == TaskCategory.OTHER) req.customCategoryName?.takeIf { it.isNotBlank() } else null,
         )
         val saved = tasks.save(entity)
         notifyAssignmentIfNeeded(
@@ -59,6 +63,13 @@ class TaskService(
         entity.priority = req.priority
         // assignedToUserId: null = clear, non-null = set. (For personal tasks this is rare.)
         entity.assignedToUserId = req.assignedToUserId
+        val newCategory = req.category ?: entity.category
+        entity.category = newCategory
+        entity.customCategoryName = if (newCategory == TaskCategory.OTHER) {
+            req.customCategoryName?.takeIf { it.isNotBlank() }
+        } else {
+            null
+        }
         val saved = tasks.save(entity)
         notifyAssignmentIfNeeded(
             actorId = ownerId,
@@ -153,7 +164,44 @@ class TaskService(
             createdBy = creator,
             familyGroupId = familyGroupId,
             priority = priority,
+            category = category,
+            customCategoryName = customCategoryName,
             photoUrls = urls,
         )
+    }
+
+    @Transactional
+    fun setDailyCompletion(callerId: Long, taskId: Long, req: TaskDailyCompletionRequest) {
+        val task = tasks.findById(taskId).orElseThrow {
+            ResponseStatusException(HttpStatus.NOT_FOUND, "Task not found")
+        }
+        if (task.ownerId != callerId) {
+            throw ResponseStatusException(HttpStatus.FORBIDDEN, "Not allowed")
+        }
+        if (task.category != TaskCategory.DAILY) {
+            throw ResponseStatusException(HttpStatus.BAD_REQUEST, "Task is not a daily task")
+        }
+        if (req.completed) {
+            val existing = dailyCompletions.findByTaskIdAndDate(taskId, req.date)
+            if (existing == null) {
+                dailyCompletions.save(
+                    TaskDailyCompletionEntity(
+                        taskId = taskId,
+                        userId = callerId,
+                        date = req.date,
+                        completedAt = System.currentTimeMillis(),
+                    ),
+                )
+            }
+        } else {
+            dailyCompletions.deleteByTaskIdAndDate(taskId, req.date)
+        }
+    }
+
+    @Transactional(readOnly = true)
+    fun listDailyCompletions(callerId: Long, fromDay: Long, toDay: Long): TaskDailyCompletionListData {
+        val items = dailyCompletions.findAllByUserIdAndDateBetween(callerId, fromDay, toDay)
+            .map { TaskDailyCompletionData(taskId = it.taskId, date = it.date, completedAt = it.completedAt) }
+        return TaskDailyCompletionListData(items, items.size)
     }
 }

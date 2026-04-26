@@ -1,6 +1,7 @@
 package com.todoapp.backend.task
 
 import jakarta.validation.constraints.NotBlank
+import jakarta.validation.constraints.Size
 
 data class TaskRequest(
     val id: Long? = null,
@@ -14,6 +15,8 @@ data class TaskRequest(
     val familyGroupId: Long? = null,
     val assignedToUserId: Long? = null,
     val priority: String? = null,
+    val category: TaskCategory? = null,
+    @field:Size(max = 64) val customCategoryName: String? = null,
 )
 
 data class TaskUserData(
@@ -34,7 +37,25 @@ data class TaskData(
     val createdBy: TaskUserData?,
     val familyGroupId: Long?,
     val priority: String?,
+    val category: TaskCategory,
+    val customCategoryName: String?,
     val photoUrls: List<String> = emptyList(),
+)
+
+data class TaskDailyCompletionRequest(
+    val date: Long,
+    val completed: Boolean,
+)
+
+data class TaskDailyCompletionData(
+    val taskId: Long,
+    val date: Long,
+    val completedAt: Long,
+)
+
+data class TaskDailyCompletionListData(
+    val items: List<TaskDailyCompletionData>,
+    val count: Int,
 )
 
 data class TaskListData(

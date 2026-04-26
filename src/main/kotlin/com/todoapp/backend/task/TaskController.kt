@@ -38,4 +38,20 @@ class TaskController(private val service: TaskService) {
         service.delete(CurrentUser.id(), id)
         return BaseResponse.ok()
     }
+
+    @PutMapping("/{id}/daily-completion")
+    fun setDailyCompletion(
+        @PathVariable id: Long,
+        @Valid @RequestBody req: TaskDailyCompletionRequest,
+    ): BaseResponse<Unit> {
+        service.setDailyCompletion(CurrentUser.id(), id, req)
+        return BaseResponse.ok()
+    }
+
+    @GetMapping("/daily-completions")
+    fun listDailyCompletions(
+        @RequestParam from: Long,
+        @RequestParam to: Long,
+    ): BaseResponse<TaskDailyCompletionListData> =
+        BaseResponse.ok(service.listDailyCompletions(CurrentUser.id(), from, to))
 }

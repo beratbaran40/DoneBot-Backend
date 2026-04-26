@@ -2,6 +2,8 @@ package com.todoapp.backend.task
 
 import jakarta.persistence.Column
 import jakarta.persistence.Entity
+import jakarta.persistence.EnumType
+import jakarta.persistence.Enumerated
 import jakarta.persistence.GeneratedValue
 import jakarta.persistence.GenerationType
 import jakarta.persistence.Id
@@ -56,6 +58,13 @@ class TaskEntity(
 
     @Column
     var priority: String? = null,
+
+    @Enumerated(EnumType.STRING)
+    @Column(name = "category", nullable = false, length = 32)
+    var category: TaskCategory = TaskCategory.PERSONAL,
+
+    @Column(name = "custom_category_name", length = 64)
+    var customCategoryName: String? = null,
 
     @Column(nullable = false, updatable = false)
     var createdAt: Instant = Instant.now(),
