@@ -4,6 +4,7 @@ import com.todoapp.backend.auth.oauth.FacebookAuthService
 import com.todoapp.backend.auth.oauth.GoogleAuthService
 import com.todoapp.backend.user.UserEntity
 import com.todoapp.backend.user.UserRepository
+import com.todoapp.backend.user.UserSummary
 import com.todoapp.backend.user.toDto
 import org.slf4j.LoggerFactory
 import org.springframework.beans.factory.annotation.Value
@@ -49,10 +50,11 @@ class AuthService(
 
     @Transactional
     fun login(req: LoginRequest): AuthResponseData {
-        val user = users.findByEmail(req.email) ?: throw AuthException("Invalid credentials")
-        val hash = user.passwordHash ?: throw AuthException("Invalid credentials")
+        val creds = users.findCredentialsByEmail(req.email) ?: throw AuthException("Invalid credentials")
+        val hash = creds.passwordHash ?: throw AuthException("Invalid credentials")
         if (!passwordEncoder.matches(req.password, hash)) throw AuthException("Invalid credentials")
-        return issueTokenPair(user)
+        val summary = users.findSummaryById(creds.id) ?: throw AuthException("User not found")
+        return issueTokenPair(summary)
     }
 
     @Transactional
@@ -97,30 +99,30 @@ class AuthService(
         if (record.revoked || record.expiresAt.isBefore(Instant.now())) throw AuthException("Refresh token expired")
         record.revoked = true
         refreshTokens.save(record)
-        val user = users.findById(record.userId).orElseThrow { AuthException("User not found") }
-        val pair = issueTokenPair(user)
+        val summary = users.findSummaryById(record.userId) ?: throw AuthException("User not found")
+        val pair = issueTokenPair(summary)
         return RefreshTokenData(pair.accessToken, pair.refreshToken, pair.expiresIn)
     }
 
     @Transactional
     fun forgotPassword(req: ForgotPasswordRequest) {
-        val user = users.findByEmail(req.email.trim())
-        if (user == null) {
+        val creds = users.findCredentialsByEmail(req.email.trim())
+        if (creds == null) {
             // Do not reveal account existence.
             log.info("forgotPassword: no account for {}", req.email)
             return
         }
-        if (user.passwordHash == null) {
+        if (creds.passwordHash == null) {
             // Social-only account — no password to reset. Still succeed silently.
-            log.info("forgotPassword: user {} has no password (oauth-only)", user.id)
+            log.info("forgotPassword: user {} has no password (oauth-only)", creds.id)
             return
         }
         // Invalidate previous unused tokens for this user.
-        passwordResets.deleteAllByUserId(user.id)
+        passwordResets.deleteAllByUserId(creds.id)
         val rawToken = randomToken()
         passwordResets.save(
             PasswordResetEntity(
-                userId = user.id,
+                userId = creds.id,
                 tokenHash = sha256(rawToken),
                 expiresAt = Instant.now().plus(Duration.ofMinutes(resetTtlMinutes)),
             )
@@ -131,9 +133,9 @@ class AuthService(
             "$resetDeepLink?token=$rawToken"
         }
         try {
-            mailService.sendPasswordReset(user.email, user.displayName, link)
+            mailService.sendPasswordReset(creds.email, creds.displayName, link)
         } catch (ex: Exception) {
-            log.error("Failed to send reset email to {}", user.email, ex)
+            log.error("Failed to send reset email to {}", creds.email, ex)
         }
     }
 
@@ -152,6 +154,25 @@ class AuthService(
     }
 
     private fun issueTokenPair(user: UserEntity): AuthResponseData {
+        val access = jwtService.issueAccessToken(user.id)
+        val refreshRaw = randomToken()
+        refreshTokens.save(
+            RefreshTokenEntity(
+                userId = user.id,
+                tokenHash = sha256(refreshRaw),
+                expiresAt = Instant.now().plusSeconds(jwtService.refreshTokenTtlSeconds()),
+            )
+        )
+        return AuthResponseData(
+            accessToken = access,
+            refreshToken = refreshRaw,
+            expiresIn = jwtService.accessTokenTtlSeconds(),
+            user = user.toDto(),
+        )
+    }
+
+    /** Lighter token-pair issuance using a UserSummary projection — avoids loading the avatar BLOB. */
+    private fun issueTokenPair(user: UserSummary): AuthResponseData {
         val access = jwtService.issueAccessToken(user.id)
         val refreshRaw = randomToken()
         refreshTokens.save(

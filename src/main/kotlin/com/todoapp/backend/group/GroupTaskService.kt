@@ -54,7 +54,7 @@ class GroupTaskService(
         activity.log(groupId, callerId, GroupActivityType.TASK_CREATED,
             description = "Created task “${entity.title}”", taskId = entity.id, taskTitle = entity.title)
         if (entity.assignedToUserId != null) {
-            val assigneeName = users.findById(entity.assignedToUserId!!).orElse(null)?.displayName ?: "?"
+            val assigneeName = users.findSummaryById(entity.assignedToUserId!!)?.displayName ?: "?"
             activity.log(groupId, callerId, GroupActivityType.TASK_ASSIGNED,
                 description = "Assigned “${entity.title}” to $assigneeName",
                 taskId = entity.id, taskTitle = entity.title)
@@ -132,7 +132,7 @@ class GroupTaskService(
                 activity.log(groupId, callerId, GroupActivityType.TASK_UNASSIGNED,
                     description = "Unassigned “${saved.title}”", taskId = saved.id, taskTitle = saved.title)
             } else {
-                val name = users.findById(saved.assignedToUserId!!).orElse(null)?.displayName ?: "?"
+                val name = users.findSummaryById(saved.assignedToUserId!!)?.displayName ?: "?"
                 activity.log(groupId, callerId, GroupActivityType.TASK_ASSIGNED,
                     description = "Assigned “${saved.title}” to $name", taskId = saved.id, taskTitle = saved.title)
                 if (saved.assignedToUserId != callerId) {
@@ -154,7 +154,7 @@ class GroupTaskService(
             activity.log(groupId, callerId, GroupActivityType.TASK_COMPLETED,
                 description = "Completed “${saved.title}”", taskId = saved.id, taskTitle = saved.title)
             if (saved.ownerId != callerId) {
-                val actorName = users.findById(callerId).orElse(null)?.displayName ?: "Someone"
+                val actorName = users.findSummaryById(callerId)?.displayName ?: "Someone"
                 publisher.publish(
                     userIds = listOf(saved.ownerId),
                     type = NotificationType.TASK_COMPLETED,
@@ -214,13 +214,13 @@ class GroupTaskService(
 
     private fun TaskEntity.toDto(): GroupTaskData {
         val assignee = assignedToUserId?.let { uid ->
-            val u = users.findById(uid).orElse(null) ?: return@let null
+            val u = users.findSummaryById(uid) ?: return@let null
             val m = members.findByGroupIdAndUserId(familyGroupId!!, uid)
             GroupMemberData(
                 userId = u.id,
                 displayName = u.displayName,
                 email = u.email,
-                avatarUrl = if (u.avatarBytes != null) "/users/${u.id}/avatar" else u.avatarUrl,
+                avatarUrl = if (u.hasAvatar) "/users/${u.id}/avatar" else u.avatarUrl,
                 role = m?.role ?: GroupRole.MEMBER.name,
                 joinedAt = m?.joinedAt?.toEpochMilli() ?: 0L,
             )

@@ -41,7 +41,7 @@ class TaskDueSoonJob(
             val due = task.dueInstant() ?: return@forEach
             if (due.isBefore(now) || due.isAfter(horizon)) return@forEach
             val assignee = task.assignedToUserId ?: return@forEach
-            val group = groups.findById(task.familyGroupId ?: return@forEach).orElse(null) ?: return@forEach
+            val group = groups.findSummaryById(task.familyGroupId ?: return@forEach) ?: return@forEach
             publisher.publish(
                 userIds = listOf(assignee),
                 type = NotificationType.TASK_DUE_SOON,

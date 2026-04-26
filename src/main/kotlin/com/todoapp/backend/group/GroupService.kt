@@ -45,14 +45,13 @@ class GroupService(
     fun listSummaries(userId: Long): GroupSummaryListData {
         val mine = members.findAllByUserId(userId)
         val summaries = mine.map { membership ->
-            val group = groups.findById(membership.groupId).orElseThrow {
-                ResponseStatusException(HttpStatus.NOT_FOUND, "Group ${membership.groupId} not found")
-            }
+            val group = groups.findSummaryById(membership.groupId)
+                ?: throw ResponseStatusException(HttpStatus.NOT_FOUND, "Group ${membership.groupId} not found")
             GroupSummaryData(
                 id = group.id,
                 name = group.name,
                 description = group.description,
-                avatarUrl = if (group.avatarBytes != null) "/family-groups/${group.id}/avatar" else null,
+                avatarUrl = if (group.hasAvatar) "/family-groups/${group.id}/avatar" else null,
                 role = membership.role,
                 memberCount = members.countByGroupId(group.id).toInt(),
                 pendingTaskCount = tasks.findAllByFamilyGroupId(group.id).count { !it.isCompleted },
@@ -98,7 +97,7 @@ class GroupService(
         if (memberUserId == userId) {
             throw ResponseStatusException(HttpStatus.BAD_REQUEST, "Use transfer-ownership to leave as admin")
         }
-        val name = users.findById(memberUserId).orElse(null)?.displayName ?: "user"
+        val name = users.findSummaryById(memberUserId)?.displayName ?: "user"
         members.deleteByGroupIdAndUserId(groupId, memberUserId)
         logActivity(groupId, userId, GroupActivityType.MEMBER_REMOVED, "Removed $name from the group")
     }
@@ -118,7 +117,7 @@ class GroupService(
         val group = groups.findById(groupId).get()
         group.ownerId = req.userId
         groups.save(group)
-        val newOwnerName = users.findById(req.userId).orElse(null)?.displayName ?: "user"
+        val newOwnerName = users.findSummaryById(req.userId)?.displayName ?: "user"
         logActivity(groupId, userId, GroupActivityType.OWNERSHIP_TRANSFERRED, "Transferred ownership to $newOwnerName")
     }
 
@@ -160,8 +159,12 @@ class GroupService(
     }
 
     fun GroupEntity.toData(): GroupData {
-        val memberDtos = members.findAllByGroupId(id).mapNotNull { m ->
-            users.findById(m.userId).orElse(null)?.let { u -> u.toMemberDto(m) }
+        val memberships = members.findAllByGroupId(id)
+        val memberSummaries = users
+            .findAllSummariesByIdIn(memberships.map { it.userId })
+            .associateBy { it.id }
+        val memberDtos = memberships.mapNotNull { m ->
+            memberSummaries[m.userId]?.toMemberDto(m)
         }
         return GroupData(
             id = id,
@@ -174,11 +177,11 @@ class GroupService(
         )
     }
 
-    private fun UserEntity.toMemberDto(m: GroupMemberEntity) = GroupMemberData(
+    private fun com.todoapp.backend.user.UserSummary.toMemberDto(m: GroupMemberEntity) = GroupMemberData(
         userId = id,
         displayName = displayName,
         email = email,
-        avatarUrl = if (avatarBytes != null) "/users/$id/avatar" else avatarUrl,
+        avatarUrl = if (hasAvatar) "/users/$id/avatar" else avatarUrl,
         role = m.role,
         joinedAt = m.joinedAt.toEpochMilli(),
     )

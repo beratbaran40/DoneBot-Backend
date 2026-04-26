@@ -136,9 +136,9 @@ class TaskService(
 
     private fun TaskEntity.toData(): TaskData {
         val assignee = assignedToUserId?.let { uid ->
-            users.findById(uid).orElse(null)?.let { TaskUserData(it.id, it.displayName) }
+            users.findSummaryById(uid)?.let { TaskUserData(it.id, it.displayName) }
         }
-        val creator = users.findById(ownerId).orElse(null)?.let { TaskUserData(it.id, it.displayName) }
+        val creator = users.findSummaryById(ownerId)?.let { TaskUserData(it.id, it.displayName) }
         val urls = photos.findAllByTaskIdOrderByCreatedAtAsc(id).map { "/tasks/$id/photos/${it.id}" }
         return TaskData(
             id = id,
