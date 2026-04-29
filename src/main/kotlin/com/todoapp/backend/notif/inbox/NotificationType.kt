@@ -7,4 +7,5 @@ enum class NotificationType {
     TASK_ASSIGNED,
     TASK_COMPLETED,
     TASK_DUE_SOON,
+    GROUP_OWNERSHIP_TRANSFERRED,
 }

@@ -3,12 +3,15 @@ package com.todoapp.backend.user
 import com.todoapp.backend.auth.RefreshTokenRepository
 import com.todoapp.backend.common.BaseResponse
 import com.todoapp.backend.common.CurrentUser
+import com.todoapp.backend.notif.NotificationPublisher
+import com.todoapp.backend.notif.inbox.NotificationType
 import jakarta.validation.Valid
 import org.springframework.http.HttpStatus
 import org.springframework.http.MediaType
 import org.springframework.http.ResponseEntity
 import org.springframework.security.crypto.password.PasswordEncoder
 import org.springframework.transaction.annotation.Transactional
+import org.springframework.web.bind.annotation.DeleteMapping
 import org.springframework.web.bind.annotation.GetMapping
 import org.springframework.web.bind.annotation.PathVariable
 import org.springframework.web.bind.annotation.PostMapping
@@ -26,6 +29,8 @@ class UserController(
     private val users: UserRepository,
     private val refreshTokens: RefreshTokenRepository,
     private val passwordEncoder: PasswordEncoder,
+    private val accountDeletionService: AccountDeletionService,
+    private val notificationPublisher: NotificationPublisher,
 ) {
 
     @GetMapping("/me")
@@ -63,6 +68,30 @@ class UserController(
         user.passwordHash = passwordEncoder.encode(req.newPassword)
         users.save(user)
         refreshTokens.revokeAllByUserId(user.id)
+        return BaseResponse.ok(Unit)
+    }
+
+    @DeleteMapping("/me")
+    fun deleteMe(): BaseResponse<Unit> {
+        val userId = CurrentUser.id()
+        val result = accountDeletionService.deleteAccount(userId)
+        // After-commit fan-out: notify each new owner that they took over a group.
+        // The deletion transaction has already committed by the time we reach here
+        // (controller method itself isn't @Transactional, only the service is).
+        result.transferredGroups.forEach { tg ->
+            runCatching {
+                notificationPublisher.publish(
+                    userIds = listOf(tg.newOwnerId),
+                    type = NotificationType.GROUP_OWNERSHIP_TRANSFERRED,
+                    title = "You're now the admin of ${tg.groupName}",
+                    body = "Tap to open the group",
+                    payload = mapOf(
+                        "groupId" to tg.groupId.toString(),
+                        "groupName" to tg.groupName,
+                    ),
+                )
+            }
+        }
         return BaseResponse.ok(Unit)
     }
 

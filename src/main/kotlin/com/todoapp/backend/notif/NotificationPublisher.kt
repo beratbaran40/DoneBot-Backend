@@ -55,5 +55,6 @@ class NotificationPublisher(
         NotificationType.TASK_ASSIGNED -> "task_assigned"
         NotificationType.TASK_COMPLETED -> "task_completed"
         NotificationType.TASK_DUE_SOON -> "task_due_soon"
+        NotificationType.GROUP_OWNERSHIP_TRANSFERRED -> "group_ownership_transferred"
     }
 }

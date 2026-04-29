@@ -29,6 +29,8 @@ interface GroupRepository : JpaRepository<GroupEntity, Long> {
             "FROM GroupEntity g WHERE g.id = :id"
     )
     fun findSummaryById(@Param("id") id: Long): GroupSummary?
+
+    fun findAllByOwnerId(ownerId: Long): List<GroupEntity>
 }
 
 @Repository
