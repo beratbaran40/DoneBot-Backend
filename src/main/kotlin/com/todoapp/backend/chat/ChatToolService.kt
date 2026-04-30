@@ -152,8 +152,9 @@ class ChatToolService(
             ?: return errorPayload("taskId is required")
         val task = taskRepo.findById(taskId).orElse(null)
             ?: return errorPayload("task not found")
-        if (task.ownerId != userId || task.familyGroupId != null) {
-            return errorPayload("task is not editable")
+        if (task.ownerId != userId) return errorPayload("not your task")
+        if (task.familyGroupId != null) {
+            return errorPayload("group_task_blocked: shared group tasks must be edited from the group screen, not chat")
         }
         args.fields["title"]?.stringValue?.takeIf { it.isNotBlank() }?.let { task.title = it }
         args.fields["date"]?.stringValue?.takeIf { it.isNotBlank() }?.let {
@@ -177,8 +178,9 @@ class ChatToolService(
             ?: return errorPayload("taskId is required")
         val task = taskRepo.findById(taskId).orElse(null)
             ?: return errorPayload("task not found")
-        if (task.ownerId != userId || task.familyGroupId != null) {
-            return errorPayload("task is not deletable")
+        if (task.ownerId != userId) return errorPayload("not your task")
+        if (task.familyGroupId != null) {
+            return errorPayload("group_task_blocked: shared group tasks must be edited from the group screen, not chat")
         }
         taskRepo.delete(task)
         return objectValue("ok" to boolValue(true), "deletedId" to longValue(taskId))
@@ -192,6 +194,9 @@ class ChatToolService(
         val task = taskRepo.findById(taskId).orElse(null)
             ?: return errorPayload("task not found")
         if (task.ownerId != userId) return errorPayload("not your task")
+        if (task.familyGroupId != null) {
+            return errorPayload("group_task_blocked: shared group tasks must be edited from the group screen, not chat")
+        }
         task.isCompleted = isCompleted
         return objectValue("ok" to boolValue(true), "task" to taskValue(taskRepo.save(task)))
     }
@@ -203,8 +208,9 @@ class ChatToolService(
             ?: return errorPayload("isSecret is required")
         val task = taskRepo.findById(taskId).orElse(null)
             ?: return errorPayload("task not found")
-        if (task.ownerId != userId || task.familyGroupId != null) {
-            return errorPayload("task is not editable")
+        if (task.ownerId != userId) return errorPayload("not your task")
+        if (task.familyGroupId != null) {
+            return errorPayload("group_task_blocked: shared group tasks must be edited from the group screen, not chat")
         }
         task.isSecret = isSecret
         return objectValue("ok" to boolValue(true), "task" to taskValue(taskRepo.save(task)))
