@@ -9,6 +9,11 @@ interface TaskRepository : JpaRepository<TaskEntity, Long> {
     fun findAllByOwnerIdAndFamilyGroupIdIsNull(ownerId: Long): List<TaskEntity>
     fun findAllByFamilyGroupId(groupId: Long): List<TaskEntity>
 
+    fun findFirst5ByOwnerIdAndFamilyGroupIdIsNullAndTitleContainingIgnoreCaseOrderByDateAsc(
+        ownerId: Long,
+        titleFragment: String,
+    ): List<TaskEntity>
+
     @Query(
         "SELECT t FROM TaskEntity t WHERE t.familyGroupId IS NOT NULL " +
             "AND t.assignedToUserId IS NOT NULL " +

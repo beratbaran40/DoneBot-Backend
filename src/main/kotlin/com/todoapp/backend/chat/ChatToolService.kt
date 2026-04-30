@@ -46,11 +46,16 @@ class ChatToolService(
                 "getTasksForDateRange" -> runGetTasksForDateRange(userId, args)
                 "getGroups" -> runGetGroups(userId)
                 "getCompletedTasksThisWeek" -> runGetCompletedTasksThisWeek(userId)
+                "getProductivityInsights" -> runGetProductivityInsights(userId, args)
+                "findTaskByTitle" -> runFindTaskByTitle(userId, args)
                 "createTask" -> runCreateTask(userId, args)
                 "updateTask" -> runUpdateTask(userId, args)
                 "deleteTask" -> runDeleteTask(userId, args)
                 "setTaskCompletion" -> runSetTaskCompletion(userId, args)
                 "setTaskSecret" -> runSetTaskSecret(userId, args)
+                "bulkSetTaskCompletion" -> runBulkSetTaskCompletion(userId, args)
+                "bulkDeleteTasks" -> runBulkDeleteTasks(userId, args)
+                "bulkRescheduleTasks" -> runBulkRescheduleTasks(userId, args)
                 else -> errorPayload("Unknown tool: $name")
             }
         }.getOrElse {
@@ -107,6 +112,63 @@ class ChatToolService(
         val count = taskRepo.findAllByOwnerIdAndFamilyGroupIdIsNull(userId)
             .count { it.isCompleted && it.date in weekAgo..today }
         return objectValue("count" to longValue(count.toLong()))
+    }
+
+    private fun runFindTaskByTitle(userId: Long, args: Struct): Value {
+        val query = args.fields["query"]?.stringValue.orEmpty().ifBlank {
+            return errorPayload("query is required")
+        }
+        val tasks = taskRepo
+            .findFirst5ByOwnerIdAndFamilyGroupIdIsNullAndTitleContainingIgnoreCaseOrderByDateAsc(userId, query)
+        return tasksPayload(tasks)
+    }
+
+    private fun runGetProductivityInsights(userId: Long, args: Struct): Value {
+        val range = args.fields["range"]?.stringValue?.lowercase()?.takeIf { it.isNotBlank() } ?: "week"
+        val today = LocalDate.now()
+        val todayEpoch = today.toEpochDay()
+        val startEpoch = when (range) {
+            "month" -> today.minusDays(MONTH_LOOKBACK_DAYS).toEpochDay()
+            "all" -> Long.MIN_VALUE
+            else -> today.minusDays(WEEK_LOOKBACK_DAYS).toEpochDay()
+        }
+        val all = taskRepo.findAllByOwnerIdAndFamilyGroupIdIsNull(userId)
+        val inRange = all.filter { it.date in startEpoch..todayEpoch }
+        val completedInRange = inRange.count { it.isCompleted }
+        val totalInRange = inRange.size
+        val completionPercent = if (totalInRange > 0) {
+            (completedInRange.toDouble() / totalInRange.toDouble() * PERCENT_SCALE).toLong()
+        } else {
+            0L
+        }
+
+        // Streak: consecutive days ending today with >=1 completed task.
+        val completedByDay = all
+            .filter { it.isCompleted }
+            .groupBy { it.date }
+        var streak = 0L
+        var cursor = todayEpoch
+        while (!completedByDay[cursor].isNullOrEmpty()) {
+            streak++
+            cursor--
+        }
+
+        // Busiest weekday across the range (completed tasks).
+        val busiestDay = inRange
+            .filter { it.isCompleted }
+            .groupBy { LocalDate.ofEpochDay(it.date).dayOfWeek.name }
+            .maxByOrNull { it.value.size }
+            ?.key
+            ?: ""
+
+        return objectValue(
+            "range" to stringValue(range),
+            "completedCount" to longValue(completedInRange.toLong()),
+            "totalCount" to longValue(totalInRange.toLong()),
+            "completionPercent" to longValue(completionPercent),
+            "currentStreakDays" to longValue(streak),
+            "busiestDayName" to stringValue(busiestDay),
+        )
     }
 
     // -------------------- Write tools --------------------
@@ -216,6 +278,73 @@ class ChatToolService(
         return objectValue("ok" to boolValue(true), "task" to taskValue(taskRepo.save(task)))
     }
 
+    // -------------------- Bulk write tools --------------------
+
+    private fun runBulkSetTaskCompletion(userId: Long, args: Struct): Value {
+        val taskIds = extractTaskIds(args) ?: return errorPayload("taskIds is required")
+        val isCompleted = args.fields["isCompleted"]?.boolValue
+            ?: return errorPayload("isCompleted is required")
+        return runBulk(userId, taskIds) { task ->
+            task.isCompleted = isCompleted
+            taskRepo.save(task)
+        }
+    }
+
+    private fun runBulkDeleteTasks(userId: Long, args: Struct): Value {
+        val taskIds = extractTaskIds(args) ?: return errorPayload("taskIds is required")
+        return runBulk(userId, taskIds) { task ->
+            taskRepo.delete(task)
+        }
+    }
+
+    private fun runBulkRescheduleTasks(userId: Long, args: Struct): Value {
+        val taskIds = extractTaskIds(args) ?: return errorPayload("taskIds is required")
+        val newDate = args.fields["newDate"]?.stringValue?.takeIf { it.isNotBlank() }?.let {
+            runCatching { LocalDate.parse(it).toEpochDay() }.getOrNull()
+        } ?: return errorPayload("newDate is required (YYYY-MM-DD)")
+        return runBulk(userId, taskIds) { task ->
+            task.date = newDate
+            taskRepo.save(task)
+        }
+    }
+
+    private fun extractTaskIds(args: Struct): List<Long>? {
+        val list = args.fields["taskIds"]?.listValue?.valuesList ?: return null
+        if (list.isEmpty()) return null
+        return list.mapNotNull { v -> v.numberValue.toLong().takeIf { it > 0 } }.distinct()
+    }
+
+    private inline fun runBulk(
+        userId: Long,
+        taskIds: List<Long>,
+        action: (TaskEntity) -> Unit,
+    ): Value {
+        val succeeded = mutableListOf<Long>()
+        val failed = mutableListOf<Pair<Long, String>>()
+        for (id in taskIds) {
+            val task = taskRepo.findById(id).orElse(null)
+            if (task == null) { failed.add(id to "task not found"); continue }
+            if (task.ownerId != userId) { failed.add(id to "not your task"); continue }
+            if (task.familyGroupId != null) { failed.add(id to "group_task_blocked"); continue }
+            try {
+                action(task)
+                succeeded.add(id)
+            } catch (e: Exception) {
+                failed.add(id to (e.message ?: "save failed"))
+            }
+        }
+        return objectValue(
+            "ok" to boolValue(true),
+            "succeededCount" to longValue(succeeded.size.toLong()),
+            "failedCount" to longValue(failed.size.toLong()),
+            "failed" to listValue(
+                failed.map { (id, reason) ->
+                    objectValue("id" to longValue(id), "reason" to stringValue(reason))
+                },
+            ),
+        )
+    }
+
     // -------------------- Helpers --------------------
 
     private fun tasksPayload(tasks: List<TaskEntity>): Value =
@@ -265,5 +394,8 @@ class ChatToolService(
     companion object {
         private const val DEFAULT_DURATION_SECONDS = 30L * 60L
         private const val SECONDS_PER_DAY = 24L * 3600L
+        private const val WEEK_LOOKBACK_DAYS = 6L
+        private const val MONTH_LOOKBACK_DAYS = 29L
+        private const val PERCENT_SCALE = 100.0
     }
 }

@@ -24,11 +24,16 @@ object ChatToolDeclarations {
                 getTasksForDateRange(),
                 getGroups(),
                 getCompletedTasksThisWeek(),
+                getProductivityInsights(),
+                findTaskByTitle(),
                 createTask(),
                 updateTask(),
                 deleteTask(),
                 setTaskCompletion(),
                 setTaskSecret(),
+                bulkSetTaskCompletion(),
+                bulkDeleteTasks(),
+                bulkRescheduleTasks(),
             ),
         )
         .build()
@@ -198,6 +203,127 @@ object ChatToolDeclarations {
                         Schema.newBuilder().setType(Type.BOOLEAN).setDescription("true to mark secret.").build(),
                     )
                     .addAllRequired(listOf("taskId", "isSecret"))
+                    .build(),
+            )
+            .build()
+
+    private fun getProductivityInsights(): FunctionDeclaration =
+        FunctionDeclaration.newBuilder()
+            .setName("getProductivityInsights")
+            .setDescription(
+                "Returns productivity stats for a date range: completedCount, totalCount, " +
+                    "completionPercent (0-100), currentStreakDays (consecutive days ending " +
+                    "today with at least one completed task), and busiestDayName " +
+                    "(day-of-week with most completions). Use for questions like " +
+                    "'how productive was I', 'streak', 'best day', 'completed this month'.",
+            )
+            .setParameters(
+                Schema.newBuilder()
+                    .setType(Type.OBJECT)
+                    .putProperties(
+                        "range",
+                        Schema.newBuilder().setType(Type.STRING)
+                            .setDescription(
+                                "One of: 'week' (last 7 days, default), 'month' (last 30 days), 'all' (all time).",
+                            )
+                            .build(),
+                    )
+                    .build(),
+            )
+            .build()
+
+    private fun findTaskByTitle(): FunctionDeclaration =
+        FunctionDeclaration.newBuilder()
+            .setName("findTaskByTitle")
+            .setDescription(
+                "Searches the user's personal tasks by title (case-insensitive substring match). " +
+                    "Returns up to 5 matches with id, title, date, isCompleted. " +
+                    "ALWAYS call this BEFORE update/delete/setCompletion when the user references a task " +
+                    "by name without giving an id (e.g. 'delete the grocery task').",
+            )
+            .setParameters(
+                Schema.newBuilder()
+                    .setType(Type.OBJECT)
+                    .putProperties("query", stringSchema("Title search substring (e.g. 'grocery', 'dentist')."))
+                    .addAllRequired(listOf("query"))
+                    .build(),
+            )
+            .build()
+
+    private fun bulkSetTaskCompletion(): FunctionDeclaration =
+        FunctionDeclaration.newBuilder()
+            .setName("bulkSetTaskCompletion")
+            .setDescription(
+                "Marks multiple personal tasks complete or incomplete in one call. " +
+                    "REQUIRES_CONFIRMATION: ALWAYS list the affected tasks (title + date) and ask " +
+                    "the user to confirm BEFORE calling this tool. Group tasks are skipped.",
+            )
+            .setParameters(
+                Schema.newBuilder()
+                    .setType(Type.OBJECT)
+                    .putProperties(
+                        "taskIds",
+                        Schema.newBuilder()
+                            .setType(Type.ARRAY)
+                            .setItems(longSchema("Task id."))
+                            .setDescription("Numeric task ids to update.")
+                            .build(),
+                    )
+                    .putProperties(
+                        "isCompleted",
+                        Schema.newBuilder().setType(Type.BOOLEAN)
+                            .setDescription("true to complete, false to mark incomplete.").build(),
+                    )
+                    .addAllRequired(listOf("taskIds", "isCompleted"))
+                    .build(),
+            )
+            .build()
+
+    private fun bulkDeleteTasks(): FunctionDeclaration =
+        FunctionDeclaration.newBuilder()
+            .setName("bulkDeleteTasks")
+            .setDescription(
+                "Deletes multiple personal tasks in one call. " +
+                    "REQUIRES_CONFIRMATION: ALWAYS list the affected tasks (title + date) and ask " +
+                    "the user to confirm BEFORE calling this tool. Group tasks are skipped. Cannot be undone.",
+            )
+            .setParameters(
+                Schema.newBuilder()
+                    .setType(Type.OBJECT)
+                    .putProperties(
+                        "taskIds",
+                        Schema.newBuilder()
+                            .setType(Type.ARRAY)
+                            .setItems(longSchema("Task id."))
+                            .setDescription("Numeric task ids to delete.")
+                            .build(),
+                    )
+                    .addAllRequired(listOf("taskIds"))
+                    .build(),
+            )
+            .build()
+
+    private fun bulkRescheduleTasks(): FunctionDeclaration =
+        FunctionDeclaration.newBuilder()
+            .setName("bulkRescheduleTasks")
+            .setDescription(
+                "Moves multiple personal tasks to a new date in one call. " +
+                    "REQUIRES_CONFIRMATION: ALWAYS list the affected tasks (title + current date) and " +
+                    "ask the user to confirm BEFORE calling this tool. Group tasks are skipped.",
+            )
+            .setParameters(
+                Schema.newBuilder()
+                    .setType(Type.OBJECT)
+                    .putProperties(
+                        "taskIds",
+                        Schema.newBuilder()
+                            .setType(Type.ARRAY)
+                            .setItems(longSchema("Task id."))
+                            .setDescription("Numeric task ids to reschedule.")
+                            .build(),
+                    )
+                    .putProperties("newDate", isoDateSchema("Target date YYYY-MM-DD."))
+                    .addAllRequired(listOf("taskIds", "newDate"))
                     .build(),
             )
             .build()

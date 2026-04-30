@@ -34,6 +34,7 @@ class ChatService(
     private val taskRepo: TaskRepository,
     private val users: UserRepository,
     private val props: ChatProperties,
+    private val tracker: ChatUsageTracker,
 ) {
     private val log = LoggerFactory.getLogger(ChatService::class.java)
 
@@ -59,9 +60,16 @@ class ChatService(
 
         var roundTrips = 0
         var conversation = history
+        var promptTokens = 0L
+        var responseTokens = 0L
+        var totalTokens = 0L
         repeat(props.maxToolIterations) {
             roundTrips++
             val response = vertex.generate(model, conversation)
+            val usage = response.usageMetadata
+            promptTokens += usage.promptTokenCount.toLong()
+            responseTokens += usage.candidatesTokenCount.toLong()
+            totalTokens += usage.totalTokenCount.toLong()
             val candidate = response.candidatesList.firstOrNull()
                 ?: throw ResponseStatusException(HttpStatus.BAD_GATEWAY, "Empty response from model")
             val parts = candidate.content.partsList
@@ -81,6 +89,11 @@ class ChatService(
                     "Chat reply: user={} rt={} ms={} refused={}",
                     userId, roundTrips, ms, refused,
                 )
+                log.info(
+                    "ChatCost user={} rt={} promptTok={} respTok={} totalTok={}",
+                    userId, roundTrips, promptTokens, responseTokens, totalTokens,
+                )
+                tracker.record(userId)
                 return ChatMessageResponse(
                     text = text,
                     meta = ChatTurnMeta(
