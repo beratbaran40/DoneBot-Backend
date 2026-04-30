@@ -35,6 +35,9 @@ dependencies {
 	runtimeOnly("io.jsonwebtoken:jjwt-jackson:0.12.6")
 	implementation("com.google.api-client:google-api-client:2.7.0")
 	implementation("com.google.firebase:firebase-admin:9.4.1")
+	// Vertex AI Java SDK — server-side Gemini access for the chat proxy
+	// (replaces the firebase-ai dependency that used to live on the client).
+	implementation("com.google.cloud:google-cloud-vertexai:1.20.0")
 	runtimeOnly("com.h2database:h2")
 	runtimeOnly("org.postgresql:postgresql")
 	implementation("org.springframework.boot:spring-boot-flyway")
