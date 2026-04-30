@@ -4,6 +4,9 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>DoneBot — Terms of Service / Kullanım Koşulları</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600&display=swap" rel="stylesheet">
     <style>
         :root {
             --bg: #F8F9FC;
@@ -11,8 +14,14 @@
             --muted: #717171;
             --primary: #4566EC;
             --accent: #1C3082;
-            --card: #FFFAF0;
-            --border: #C0C0C0;
+            --soft-pink: #F5D3BB;
+            --card: #EDF4FF;
+            --card-border: #A9BAFF;
+            --surface: #FFFAF0;
+            --shadow: 0 4px 14px rgba(69, 102, 236, 0.10);
+            --shadow-soft: 0 2px 8px rgba(69, 102, 236, 0.06);
+            --radius-card: 16px;
+            --radius-pill: 999px;
         }
         @media (prefers-color-scheme: dark) {
             :root {
@@ -21,68 +30,125 @@
                 --muted: #9CA3AF;
                 --primary: #A9BAFF;
                 --accent: #C7D0FF;
+                --soft-pink: #3D2820;
                 --card: #1A1D24;
-                --border: #2C3038;
+                --card-border: #3D6A9E;
+                --surface: #16171B;
+                --shadow: 0 4px 14px rgba(0, 0, 0, 0.45);
+                --shadow-soft: 0 2px 8px rgba(0, 0, 0, 0.30);
             }
         }
         * { box-sizing: border-box; }
         body {
-            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+            font-family: "Poppins", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
             max-width: 720px;
             margin: 0 auto;
             padding: 24px;
             color: var(--fg);
             background: var(--bg);
-            line-height: 1.6;
+            line-height: 1.65;
+            font-weight: 400;
         }
-        h1 { color: var(--primary); margin-top: 12px; }
-        h2 { color: var(--accent); margin-top: 32px; }
-        a { color: var(--primary); }
-        p, li { color: var(--fg); }
-        .updated { color: var(--muted); font-size: 14px; }
+
+        .header-card {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            background: var(--surface);
+            border-radius: var(--radius-card);
+            padding: 12px 16px;
+            margin-bottom: 16px;
+            box-shadow: var(--shadow-soft);
+        }
+        .header-avatar {
+            width: 44px; height: 44px;
+            border-radius: 50%;
+            background: var(--card);
+            display: flex; align-items: center; justify-content: center;
+            overflow: hidden; flex-shrink: 0;
+        }
+        .header-avatar img { width: 40px; height: 40px; border-radius: 50%; object-fit: cover; }
+        .header-text { display: flex; flex-direction: column; gap: 2px; }
+        .header-title { font-weight: 600; font-size: 16px; color: var(--fg); letter-spacing: 0.1px; }
+        .header-sub { font-size: 12px; color: var(--muted); }
 
         .lang-bar {
-            position: sticky;
-            top: 12px;
-            display: flex;
-            justify-content: flex-end;
-            gap: 0;
-            margin-bottom: 8px;
-            z-index: 10;
+            position: sticky; top: 12px;
+            display: flex; justify-content: flex-end;
+            margin-bottom: 16px; z-index: 10;
         }
         .lang-pill {
             display: inline-flex;
-            background: var(--card);
-            border: 1px solid var(--border);
-            border-radius: 999px;
+            background: var(--surface);
+            border: 1px solid var(--card-border);
+            border-radius: var(--radius-pill);
             padding: 4px;
-            box-shadow: 0 1px 2px rgba(0,0,0,0.06);
+            box-shadow: var(--shadow-soft);
         }
         .lang-pill button {
-            font: inherit;
-            font-size: 13px;
-            font-weight: 600;
-            padding: 6px 14px;
-            border-radius: 999px;
-            border: 0;
-            background: transparent;
-            color: var(--muted);
-            cursor: pointer;
-            transition: background 120ms, color 120ms;
+            font: inherit; font-size: 13px; font-weight: 500;
+            padding: 6px 16px;
+            border-radius: var(--radius-pill);
+            border: 0; background: transparent;
+            color: var(--muted); cursor: pointer;
+            transition: background 150ms, color 150ms;
         }
         .lang-pill button[aria-pressed="true"] {
-            background: var(--primary);
-            color: #fff;
+            background: var(--primary); color: #fff; font-weight: 600;
         }
-        .lang-pill button:hover:not([aria-pressed="true"]) {
-            color: var(--fg);
+        .lang-pill button:hover:not([aria-pressed="true"]) { color: var(--fg); }
+
+        h1 {
+            color: var(--accent);
+            font-weight: 600; font-size: 26px; line-height: 1.3;
+            margin: 24px 0 8px;
         }
+        .updated { color: var(--muted); font-size: 13px; margin-bottom: 24px; }
+
+        .card-group {
+            background: var(--card);
+            border: 1px solid var(--card-border);
+            border-radius: var(--radius-card);
+            padding: 18px 20px;
+            margin: 16px 0;
+            box-shadow: var(--shadow);
+        }
+        h2 { color: var(--accent); font-weight: 600; font-size: 17px; margin: 0 0 8px; }
+        p, li { color: var(--fg); font-size: 14px; margin: 6px 0; }
+        ul { padding-left: 20px; margin: 8px 0; }
+        strong { font-weight: 600; color: var(--accent); }
+
+        a {
+            color: var(--primary); text-decoration: none;
+            border-bottom: 1px dotted var(--primary);
+            transition: color 150ms, border-bottom-color 150ms;
+        }
+        a:hover { color: var(--accent); border-bottom-color: var(--accent); }
+        em { font-style: normal; color: var(--accent); font-weight: 500; }
 
         [data-lang] { display: none; }
         [data-lang].active { display: block; }
+
+        .footer-signature { margin-top: 32px; text-align: center; color: var(--muted); font-size: 12px; }
+
+        @media (max-width: 480px) {
+            body { padding: 16px; }
+            h1 { font-size: 22px; }
+            .card-group { padding: 14px 16px; }
+        }
     </style>
 </head>
 <body>
+
+<div class="header-card">
+    <div class="header-avatar">
+        <img src="/legal/donebot-avatar.png" alt="DoneBot" onerror="this.style.display='none'">
+    </div>
+    <div class="header-text">
+        <span class="header-title">DoneBot</span>
+        <span class="header-sub" data-lang-text-en="Productivity assistant" data-lang-text-tr="Verimlilik asistanı">Productivity assistant</span>
+    </div>
+</div>
 
 <div class="lang-bar">
     <div class="lang-pill" role="tablist" aria-label="Language">
@@ -93,93 +159,138 @@
 
 <!-- ======================== ENGLISH ======================== -->
 <section data-lang="en" class="active">
-    <h1>Terms of Service — DoneBot</h1>
+    <h1>Terms of Service</h1>
     <p class="updated">Last updated: 2026-04-30</p>
 
     <p>By using DoneBot, you agree to these terms. If you don&rsquo;t agree, please don&rsquo;t use the app.</p>
 
-    <h2>1. Your account</h2>
-    <p>You are responsible for keeping your credentials secure and for activity under your account. You must be at least 13 (or the minimum digital-consent age in your jurisdiction) to use DoneBot.</p>
+    <div class="card-group">
+        <h2>1. Your account</h2>
+        <p>You are responsible for keeping your credentials secure and for activity under your account. You must be at least 13 (or the minimum digital-consent age in your jurisdiction) to use DoneBot.</p>
+    </div>
 
-    <h2>2. Acceptable use</h2>
-    <ul>
-        <li>Don&rsquo;t use DoneBot to harass, harm, defraud, or violate the rights of others.</li>
-        <li>Don&rsquo;t attempt to reverse-engineer, scrape, or abuse the AI features beyond ordinary task-management use.</li>
-        <li>Don&rsquo;t upload illegal content or content that infringes intellectual-property rights.</li>
-    </ul>
+    <div class="card-group">
+        <h2>2. Acceptable use</h2>
+        <ul>
+            <li>Don&rsquo;t use DoneBot to harass, harm, defraud, or violate the rights of others.</li>
+            <li>Don&rsquo;t attempt to reverse-engineer, scrape, or abuse the AI features beyond ordinary task-management use.</li>
+            <li>Don&rsquo;t upload illegal content or content that infringes intellectual-property rights.</li>
+        </ul>
+    </div>
 
-    <h2>3. Group features</h2>
-    <p>Groups you create or join are collaborative. Tasks, comments, and activity in a group are visible to all members of that group. Be mindful of what you share.</p>
+    <div class="card-group">
+        <h2>3. Group features</h2>
+        <p>Groups you create or join are collaborative. Tasks, comments, and activity in a group are visible to all members of that group. Be mindful of what you share.</p>
+    </div>
 
-    <h2>4. AI assistant (DoneBot chat)</h2>
-    <p>The in-app DoneBot chat uses Google&rsquo;s Gemini API. AI replies are generated and may be incorrect, incomplete, or outdated. Don&rsquo;t rely on them for legal, medical, or financial decisions. We are not liable for AI-generated content.</p>
+    <div class="card-group">
+        <h2>4. AI assistant (DoneBot chat)</h2>
+        <p>The in-app DoneBot chat uses Google&rsquo;s Gemini API. AI replies are generated and may be incorrect, incomplete, or outdated. Don&rsquo;t rely on them for legal, medical, or financial decisions. We are not liable for AI-generated content.</p>
+    </div>
 
-    <h2>5. Service availability</h2>
-    <p>We aim for high availability but make no uptime guarantees. The service is provided "as is" without warranties of any kind. We may suspend, modify, or discontinue features at any time.</p>
+    <div class="card-group">
+        <h2>5. Service availability</h2>
+        <p>We aim for high availability but make no uptime guarantees. The service is provided "as is" without warranties of any kind. We may suspend, modify, or discontinue features at any time.</p>
+    </div>
 
-    <h2>6. Termination</h2>
-    <p>You can delete your account at any time from in-app settings (<em>Settings &rarr; Account &rarr; Delete Account</em>). We may suspend or terminate accounts that violate these terms or applicable law.</p>
+    <div class="card-group">
+        <h2>6. Termination</h2>
+        <p>You can delete your account at any time from in-app settings (<em>Settings &rarr; Account &rarr; Delete Account</em>). We may suspend or terminate accounts that violate these terms or applicable law.</p>
+    </div>
 
-    <h2>7. Limitation of liability</h2>
-    <p>To the maximum extent permitted by law, our total liability arising from the service is limited to the amount you paid us in the past 12 months (if any). We are not liable for indirect, incidental, or consequential damages.</p>
+    <div class="card-group">
+        <h2>7. Limitation of liability</h2>
+        <p>To the maximum extent permitted by law, our total liability arising from the service is limited to the amount you paid us in the past 12 months (if any). We are not liable for indirect, incidental, or consequential damages.</p>
+    </div>
 
-    <h2>8. Governing law</h2>
-    <p>These terms are governed by the laws of Türkiye, unless local consumer-protection law in your jurisdiction grants stronger rights.</p>
+    <div class="card-group">
+        <h2>8. Governing law</h2>
+        <p>These terms are governed by the laws of Türkiye, unless local consumer-protection law in your jurisdiction grants stronger rights.</p>
+    </div>
 
-    <h2>9. Changes</h2>
-    <p>We may update these terms. Material changes will be communicated in-app where feasible. Continued use after changes means you accept the new terms.</p>
+    <div class="card-group">
+        <h2>9. Changes</h2>
+        <p>We may update these terms. Material changes will be communicated in-app where feasible. Continued use after changes means you accept the new terms.</p>
+    </div>
 
-    <h2>10. Contact</h2>
-    <p>Questions? Reach us at <a href="mailto:support@donebot.app">support@donebot.app</a>.</p>
+    <div class="card-group">
+        <h2>10. Contact</h2>
+        <p>Questions? Reach us at <a href="mailto:support@donebot.app">support@donebot.app</a>.</p>
+    </div>
 </section>
 
 <!-- ======================== TÜRKÇE ======================== -->
 <section data-lang="tr">
-    <h1>Kullanım Koşulları — DoneBot</h1>
+    <h1>Kullanım Koşulları</h1>
     <p class="updated">Son güncelleme: 30.04.2026</p>
 
     <p>DoneBot&rsquo;u kullanarak bu koşulları kabul etmiş olursunuz. Kabul etmiyorsanız lütfen uygulamayı kullanmayın.</p>
 
-    <h2>1. Hesabınız</h2>
-    <p>Kimlik bilgilerinizin güvende tutulmasından ve hesabınız altındaki faaliyetlerden siz sorumlusunuz. DoneBot&rsquo;u kullanmak için en az 13 yaşında (veya bulunduğunuz ülkedeki dijital onay yaşında) olmanız gerekir.</p>
+    <div class="card-group">
+        <h2>1. Hesabınız</h2>
+        <p>Kimlik bilgilerinizin güvende tutulmasından ve hesabınız altındaki faaliyetlerden siz sorumlusunuz. DoneBot&rsquo;u kullanmak için en az 13 yaşında (veya bulunduğunuz ülkedeki dijital onay yaşında) olmanız gerekir.</p>
+    </div>
 
-    <h2>2. Kabul edilebilir kullanım</h2>
-    <ul>
-        <li>DoneBot&rsquo;u başkalarını taciz etmek, zarar vermek, dolandırmak veya haklarını ihlal etmek için kullanmayın.</li>
-        <li>AI özelliklerini olağan görev yönetimi kullanımının dışında ters-mühendislik, kazıma veya kötüye kullanmaya çalışmayın.</li>
-        <li>Yasadışı içerik veya fikri mülkiyet haklarını ihlal eden içerik yüklemeyin.</li>
-    </ul>
+    <div class="card-group">
+        <h2>2. Kabul edilebilir kullanım</h2>
+        <ul>
+            <li>DoneBot&rsquo;u başkalarını taciz etmek, zarar vermek, dolandırmak veya haklarını ihlal etmek için kullanmayın.</li>
+            <li>AI özelliklerini olağan görev yönetimi kullanımının dışında ters-mühendislik, kazıma veya kötüye kullanmaya çalışmayın.</li>
+            <li>Yasadışı içerik veya fikri mülkiyet haklarını ihlal eden içerik yüklemeyin.</li>
+        </ul>
+    </div>
 
-    <h2>3. Grup özellikleri</h2>
-    <p>Oluşturduğunuz veya katıldığınız gruplar işbirliğine açıktır. Bir gruptaki görevler, yorumlar ve etkinlikler o grubun tüm üyelerine görünür. Paylaştıklarınıza dikkat edin.</p>
+    <div class="card-group">
+        <h2>3. Grup özellikleri</h2>
+        <p>Oluşturduğunuz veya katıldığınız gruplar işbirliğine açıktır. Bir gruptaki görevler, yorumlar ve etkinlikler o grubun tüm üyelerine görünür. Paylaştıklarınıza dikkat edin.</p>
+    </div>
 
-    <h2>4. AI asistanı (DoneBot sohbeti)</h2>
-    <p>Uygulama içi DoneBot sohbeti Google&rsquo;ın Gemini API&rsquo;sini kullanır. AI yanıtları üretildiği için yanlış, eksik veya güncel olmayan bilgiler içerebilir. Yasal, tıbbi veya finansal kararlar için bunlara güvenmeyin. AI tarafından üretilen içerikten sorumlu değiliz.</p>
+    <div class="card-group">
+        <h2>4. AI asistanı (DoneBot sohbeti)</h2>
+        <p>Uygulama içi DoneBot sohbeti Google&rsquo;ın Gemini API&rsquo;sini kullanır. AI yanıtları üretildiği için yanlış, eksik veya güncel olmayan bilgiler içerebilir. Yasal, tıbbi veya finansal kararlar için bunlara güvenmeyin. AI tarafından üretilen içerikten sorumlu değiliz.</p>
+    </div>
 
-    <h2>5. Hizmet kullanılabilirliği</h2>
-    <p>Yüksek kullanılabilirliği hedefliyoruz ancak çalışma süresi garantisi vermiyoruz. Hizmet "olduğu gibi" sunulmaktadır ve herhangi bir garanti içermez. Özellikleri istediğimiz zaman askıya alabilir, değiştirebilir veya kaldırabiliriz.</p>
+    <div class="card-group">
+        <h2>5. Hizmet kullanılabilirliği</h2>
+        <p>Yüksek kullanılabilirliği hedefliyoruz ancak çalışma süresi garantisi vermiyoruz. Hizmet "olduğu gibi" sunulmaktadır ve herhangi bir garanti içermez. Özellikleri istediğimiz zaman askıya alabilir, değiştirebilir veya kaldırabiliriz.</p>
+    </div>
 
-    <h2>6. Fesih</h2>
-    <p>Hesabınızı istediğiniz zaman uygulama içi ayarlardan silebilirsiniz (<em>Ayarlar &rarr; Hesap &rarr; Hesabı Sil</em>). Bu koşulları veya geçerli yasayı ihlal eden hesapları askıya alabilir veya kapatabiliriz.</p>
+    <div class="card-group">
+        <h2>6. Fesih</h2>
+        <p>Hesabınızı istediğiniz zaman uygulama içi ayarlardan silebilirsiniz (<em>Ayarlar &rarr; Hesap &rarr; Hesabı Sil</em>). Bu koşulları veya geçerli yasayı ihlal eden hesapları askıya alabilir veya kapatabiliriz.</p>
+    </div>
 
-    <h2>7. Sorumluluk sınırlaması</h2>
-    <p>Yasanın izin verdiği azami ölçüde, hizmetten kaynaklanan toplam sorumluluğumuz son 12 ay içinde bize ödediğiniz tutarla sınırlıdır (varsa). Dolaylı, arızi veya sonuçsal zararlardan sorumlu değiliz.</p>
+    <div class="card-group">
+        <h2>7. Sorumluluk sınırlaması</h2>
+        <p>Yasanın izin verdiği azami ölçüde, hizmetten kaynaklanan toplam sorumluluğumuz son 12 ay içinde bize ödediğiniz tutarla sınırlıdır (varsa). Dolaylı, arızi veya sonuçsal zararlardan sorumlu değiliz.</p>
+    </div>
 
-    <h2>8. Geçerli hukuk</h2>
-    <p>Bu koşullar, bulunduğunuz ülkedeki yerel tüketici koruma yasası daha güçlü haklar tanımadıkça Türkiye Cumhuriyeti yasalarına tabidir.</p>
+    <div class="card-group">
+        <h2>8. Geçerli hukuk</h2>
+        <p>Bu koşullar, bulunduğunuz ülkedeki yerel tüketici koruma yasası daha güçlü haklar tanımadıkça Türkiye Cumhuriyeti yasalarına tabidir.</p>
+    </div>
 
-    <h2>9. Değişiklikler</h2>
-    <p>Bu koşulları güncelleyebiliriz. Önemli değişiklikler mümkün olduğunda uygulama içinde duyurulur. Değişikliklerden sonra kullanmaya devam etmeniz, yeni koşulları kabul ettiğiniz anlamına gelir.</p>
+    <div class="card-group">
+        <h2>9. Değişiklikler</h2>
+        <p>Bu koşulları güncelleyebiliriz. Önemli değişiklikler mümkün olduğunda uygulama içinde duyurulur. Değişikliklerden sonra kullanmaya devam etmeniz, yeni koşulları kabul ettiğiniz anlamına gelir.</p>
+    </div>
 
-    <h2>10. İletişim</h2>
-    <p>Sorularınız için <a href="mailto:support@donebot.app">support@donebot.app</a> adresinden bize ulaşın.</p>
+    <div class="card-group">
+        <h2>10. İletişim</h2>
+        <p>Sorularınız için <a href="mailto:support@donebot.app">support@donebot.app</a> adresinden bize ulaşın.</p>
+    </div>
 </section>
+
+<div class="footer-signature">
+    <span data-lang-text-en="Made with care · İstanbul" data-lang-text-tr="İtinayla yapıldı · İstanbul">Made with care · İstanbul</span>
+</div>
 
 <script>
     (function() {
         var STORAGE_KEY = 'donebot_legal_lang';
         var sections = document.querySelectorAll('[data-lang]');
         var buttons = document.querySelectorAll('.lang-pill button[data-set]');
+        var langTextNodes = document.querySelectorAll('[data-lang-text-en]');
 
         function pickInitialLang() {
             var stored = null;
@@ -196,14 +307,16 @@
             buttons.forEach(function(b) {
                 b.setAttribute('aria-pressed', b.getAttribute('data-set') === lang ? 'true' : 'false');
             });
+            langTextNodes.forEach(function(node) {
+                var attr = 'data-lang-text-' + lang;
+                if (node.hasAttribute(attr)) node.textContent = node.getAttribute(attr);
+            });
             document.documentElement.setAttribute('lang', lang);
             try { localStorage.setItem(STORAGE_KEY, lang); } catch (e) { /* private mode */ }
         }
 
         buttons.forEach(function(b) {
-            b.addEventListener('click', function() {
-                setLang(b.getAttribute('data-set'));
-            });
+            b.addEventListener('click', function() { setLang(b.getAttribute('data-set')); });
         });
 
         setLang(pickInitialLang());

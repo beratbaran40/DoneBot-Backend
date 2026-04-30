@@ -4,6 +4,9 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>DoneBot — Privacy Policy / Gizlilik Politikası</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600&display=swap" rel="stylesheet">
     <style>
         :root {
             --bg: #F8F9FC;
@@ -11,8 +14,14 @@
             --muted: #717171;
             --primary: #4566EC;
             --accent: #1C3082;
-            --card: #FFFAF0;
-            --border: #C0C0C0;
+            --soft-pink: #F5D3BB;
+            --card: #EDF4FF;
+            --card-border: #A9BAFF;
+            --surface: #FFFAF0;
+            --shadow: 0 4px 14px rgba(69, 102, 236, 0.10);
+            --shadow-soft: 0 2px 8px rgba(69, 102, 236, 0.06);
+            --radius-card: 16px;
+            --radius-pill: 999px;
         }
         @media (prefers-color-scheme: dark) {
             :root {
@@ -21,25 +30,65 @@
                 --muted: #9CA3AF;
                 --primary: #A9BAFF;
                 --accent: #C7D0FF;
+                --soft-pink: #3D2820;
                 --card: #1A1D24;
-                --border: #2C3038;
+                --card-border: #3D6A9E;
+                --surface: #16171B;
+                --shadow: 0 4px 14px rgba(0, 0, 0, 0.45);
+                --shadow-soft: 0 2px 8px rgba(0, 0, 0, 0.30);
             }
         }
         * { box-sizing: border-box; }
         body {
-            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+            font-family: "Poppins", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
             max-width: 720px;
             margin: 0 auto;
             padding: 24px;
             color: var(--fg);
             background: var(--bg);
-            line-height: 1.6;
+            line-height: 1.65;
+            font-weight: 400;
         }
-        h1 { color: var(--primary); margin-top: 12px; }
-        h2 { color: var(--accent); margin-top: 32px; }
-        a { color: var(--primary); }
-        p, li { color: var(--fg); }
-        .updated { color: var(--muted); font-size: 14px; }
+
+        /* Header card with DoneBot avatar (mirrors in-app top bar) */
+        .header-card {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            background: var(--surface);
+            border-radius: var(--radius-card);
+            padding: 12px 16px;
+            margin-bottom: 16px;
+            box-shadow: var(--shadow-soft);
+        }
+        .header-avatar {
+            width: 44px;
+            height: 44px;
+            border-radius: 50%;
+            background: var(--card);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            overflow: hidden;
+            flex-shrink: 0;
+        }
+        .header-avatar img {
+            width: 40px;
+            height: 40px;
+            border-radius: 50%;
+            object-fit: cover;
+        }
+        .header-text { display: flex; flex-direction: column; gap: 2px; }
+        .header-title {
+            font-weight: 600;
+            font-size: 16px;
+            color: var(--fg);
+            letter-spacing: 0.1px;
+        }
+        .header-sub {
+            font-size: 12px;
+            color: var(--muted);
+        }
 
         /* Language toggle */
         .lang-bar {
@@ -47,44 +96,125 @@
             top: 12px;
             display: flex;
             justify-content: flex-end;
-            gap: 0;
-            margin-bottom: 8px;
+            margin-bottom: 16px;
             z-index: 10;
         }
         .lang-pill {
             display: inline-flex;
-            background: var(--card);
-            border: 1px solid var(--border);
-            border-radius: 999px;
+            background: var(--surface);
+            border: 1px solid var(--card-border);
+            border-radius: var(--radius-pill);
             padding: 4px;
-            box-shadow: 0 1px 2px rgba(0,0,0,0.06);
+            box-shadow: var(--shadow-soft);
         }
         .lang-pill button {
             font: inherit;
             font-size: 13px;
-            font-weight: 600;
-            padding: 6px 14px;
-            border-radius: 999px;
+            font-weight: 500;
+            padding: 6px 16px;
+            border-radius: var(--radius-pill);
             border: 0;
             background: transparent;
             color: var(--muted);
             cursor: pointer;
-            transition: background 120ms, color 120ms;
+            transition: background 150ms, color 150ms;
         }
         .lang-pill button[aria-pressed="true"] {
             background: var(--primary);
             color: #fff;
+            font-weight: 600;
         }
         .lang-pill button:hover:not([aria-pressed="true"]) {
             color: var(--fg);
         }
 
+        /* Page title */
+        h1 {
+            color: var(--accent);
+            font-weight: 600;
+            font-size: 26px;
+            line-height: 1.3;
+            margin: 24px 0 8px;
+        }
+        .updated {
+            color: var(--muted);
+            font-size: 13px;
+            margin-bottom: 24px;
+        }
+
+        /* Section cards (each H2 + content gets its own card) */
+        section[data-lang] > h2 + p,
+        section[data-lang] > h2 + ul,
+        section[data-lang] > h2 + p + p,
+        section[data-lang] > h2 + p + ul {
+            /* targeted via .card-group below for cross-browser predictability */
+        }
+        .card-group {
+            background: var(--card);
+            border: 1px solid var(--card-border);
+            border-radius: var(--radius-card);
+            padding: 18px 20px;
+            margin: 16px 0;
+            box-shadow: var(--shadow);
+        }
+        h2 {
+            color: var(--accent);
+            font-weight: 600;
+            font-size: 17px;
+            margin: 0 0 8px;
+        }
+        p, li {
+            color: var(--fg);
+            font-size: 14px;
+            margin: 6px 0;
+        }
+        ul { padding-left: 20px; margin: 8px 0; }
+        strong { font-weight: 600; color: var(--accent); }
+
+        a {
+            color: var(--primary);
+            text-decoration: none;
+            border-bottom: 1px dotted var(--primary);
+            transition: color 150ms, border-bottom-color 150ms;
+        }
+        a:hover {
+            color: var(--accent);
+            border-bottom-color: var(--accent);
+        }
+
+        em { font-style: normal; color: var(--accent); font-weight: 500; }
+
         /* Language sections */
         [data-lang] { display: none; }
         [data-lang].active { display: block; }
+
+        /* Footer signature */
+        .footer-signature {
+            margin-top: 32px;
+            text-align: center;
+            color: var(--muted);
+            font-size: 12px;
+        }
+
+        /* Mobile-first */
+        @media (max-width: 480px) {
+            body { padding: 16px; }
+            h1 { font-size: 22px; }
+            .card-group { padding: 14px 16px; }
+        }
     </style>
 </head>
 <body>
+
+<div class="header-card">
+    <div class="header-avatar">
+        <img src="/legal/donebot-avatar.png" alt="DoneBot" onerror="this.style.display='none'">
+    </div>
+    <div class="header-text">
+        <span class="header-title">DoneBot</span>
+        <span class="header-sub" data-lang-text-en="Productivity assistant" data-lang-text-tr="Verimlilik asistanı">Productivity assistant</span>
+    </div>
+</div>
 
 <div class="lang-bar">
     <div class="lang-pill" role="tablist" aria-label="Language">
@@ -95,117 +225,154 @@
 
 <!-- ======================== ENGLISH ======================== -->
 <section data-lang="en" class="active">
-    <h1>Privacy Policy — DoneBot</h1>
+    <h1>Privacy Policy</h1>
     <p class="updated">Last updated: 2026-04-30</p>
 
     <p>This Privacy Policy describes how DoneBot ("we", "our", "us") collects, uses, and shares information when you use the DoneBot mobile application (the "App").</p>
 
-    <h2>1. Information we collect</h2>
-    <ul>
-        <li><strong>Account information</strong>: email address, display name, profile avatar, authentication tokens.</li>
-        <li><strong>Tasks &amp; groups</strong>: titles, descriptions, dates, recurrence settings, completion status, group memberships, and roles you assign.</li>
-        <li><strong>Chat with DoneBot (AI assistant)</strong>: messages you send to the in-app DoneBot assistant are sent to Google&rsquo;s Gemini API for processing. Conversation history is stored locally on your device and on our backend for chat continuity.</li>
-        <li><strong>Device &amp; push tokens</strong>: Firebase Cloud Messaging tokens, device identifiers, and app version.</li>
-        <li><strong>Diagnostic data</strong>: Firebase Crashlytics crash reports and Firebase Analytics usage events. You can opt out from app settings (when available).</li>
-    </ul>
+    <div class="card-group">
+        <h2>1. Information we collect</h2>
+        <ul>
+            <li><strong>Account information</strong>: email address, display name, profile avatar, authentication tokens.</li>
+            <li><strong>Tasks &amp; groups</strong>: titles, descriptions, dates, recurrence settings, completion status, group memberships, and roles you assign.</li>
+            <li><strong>Chat with DoneBot (AI assistant)</strong>: messages you send to the in-app DoneBot assistant are sent to Google&rsquo;s Gemini API for processing. Conversation history is stored locally on your device and on our backend for chat continuity.</li>
+            <li><strong>Device &amp; push tokens</strong>: Firebase Cloud Messaging tokens, device identifiers, and app version.</li>
+            <li><strong>Diagnostic data</strong>: Firebase Crashlytics crash reports and Firebase Analytics usage events. You can opt out from app settings (when available).</li>
+        </ul>
+    </div>
 
-    <h2>2. How we use information</h2>
-    <ul>
-        <li>To authenticate you and keep your data in sync across devices.</li>
-        <li>To deliver task reminders, group invitations, and ownership change notifications.</li>
-        <li>To process AI chat requests via Google Gemini (input is sent to Google for inference, but is not used to train Google&rsquo;s models per their Vertex AI terms).</li>
-        <li>To diagnose crashes and improve stability.</li>
-    </ul>
+    <div class="card-group">
+        <h2>2. How we use information</h2>
+        <ul>
+            <li>To authenticate you and keep your data in sync across devices.</li>
+            <li>To deliver task reminders, group invitations, and ownership change notifications.</li>
+            <li>To process AI chat requests via Google Gemini (input is sent to Google for inference, but is not used to train Google&rsquo;s models per their Vertex AI terms).</li>
+            <li>To diagnose crashes and improve stability.</li>
+        </ul>
+    </div>
 
-    <h2>3. Sharing</h2>
-    <p>We share data only with:</p>
-    <ul>
-        <li><strong>Group members</strong>: tasks, comments, and activity within a group are visible to all members of that group.</li>
-        <li><strong>Service providers</strong>: Google Firebase (auth, FCM, Crashlytics, Analytics, AI Logic), Render (backend hosting), and standard infrastructure subprocessors.</li>
-    </ul>
-    <p>We do not sell your personal data.</p>
+    <div class="card-group">
+        <h2>3. Sharing</h2>
+        <p>We share data only with:</p>
+        <ul>
+            <li><strong>Group members</strong>: tasks, comments, and activity within a group are visible to all members of that group.</li>
+            <li><strong>Service providers</strong>: Google Firebase (auth, FCM, Crashlytics, Analytics, AI Logic), Render (backend hosting), and standard infrastructure subprocessors.</li>
+        </ul>
+        <p>We do not sell your personal data.</p>
+    </div>
 
-    <h2>4. Data retention &amp; deletion</h2>
-    <p>You can delete your account at any time from <em>Settings &rarr; Account &rarr; Delete Account</em>. When you do:</p>
-    <ul>
-        <li>All your personal tasks, chat messages, group memberships, and device tokens are deleted within the same operation.</li>
-        <li>Groups you own are either transferred to another member (admin role passes randomly to a remaining member, with admins preferred) or deleted entirely if you were the only member.</li>
-        <li>Refresh tokens and active sessions are revoked.</li>
-        <li>Backups may retain residual data for up to 30 days for disaster recovery.</li>
-    </ul>
+    <div class="card-group">
+        <h2>4. Data retention &amp; deletion</h2>
+        <p>You can delete your account at any time from <em>Settings &rarr; Account &rarr; Delete Account</em>. When you do:</p>
+        <ul>
+            <li>All your personal tasks, chat messages, group memberships, and device tokens are deleted within the same operation.</li>
+            <li>Groups you own are either transferred to another member (admin role passes randomly to a remaining member, with admins preferred) or deleted entirely if you were the only member.</li>
+            <li>Refresh tokens and active sessions are revoked.</li>
+            <li>Backups may retain residual data for up to 30 days for disaster recovery.</li>
+        </ul>
+    </div>
 
-    <h2>5. Your rights (GDPR / KVKK)</h2>
-    <p>You can request access, correction, or deletion of your personal data. For deletion, the in-app flow is the fastest path. For other requests, contact us at the address below.</p>
+    <div class="card-group">
+        <h2>5. Your rights (GDPR / KVKK)</h2>
+        <p>You can request access, correction, or deletion of your personal data. For deletion, the in-app flow is the fastest path. For other requests, contact us at the address below.</p>
+    </div>
 
-    <h2>6. Children</h2>
-    <p>DoneBot is not directed to children under 13 (or the equivalent minimum age in your jurisdiction). We do not knowingly collect personal information from children.</p>
+    <div class="card-group">
+        <h2>6. Children</h2>
+        <p>DoneBot is not directed to children under 13 (or the equivalent minimum age in your jurisdiction). We do not knowingly collect personal information from children.</p>
+    </div>
 
-    <h2>7. Changes to this policy</h2>
-    <p>We may update this policy from time to time. The "Last updated" date at the top reflects the most recent change. Material changes will be highlighted in-app where feasible.</p>
+    <div class="card-group">
+        <h2>7. Changes to this policy</h2>
+        <p>We may update this policy from time to time. The "Last updated" date at the top reflects the most recent change. Material changes will be highlighted in-app where feasible.</p>
+    </div>
 
-    <h2>8. Contact</h2>
-    <p>Questions? Reach us at <a href="mailto:support@donebot.app">support@donebot.app</a>.</p>
+    <div class="card-group">
+        <h2>8. Contact</h2>
+        <p>Questions? Reach us at <a href="mailto:support@donebot.app">support@donebot.app</a>.</p>
+    </div>
 </section>
 
 <!-- ======================== TÜRKÇE ======================== -->
 <section data-lang="tr">
-    <h1>Gizlilik Politikası — DoneBot</h1>
+    <h1>Gizlilik Politikası</h1>
     <p class="updated">Son güncelleme: 30.04.2026</p>
 
     <p>Bu Gizlilik Politikası, DoneBot ("biz", "bizim") mobil uygulamasını ("Uygulama") kullandığınızda hangi bilgileri topladığımızı, nasıl kullandığımızı ve kimlerle paylaştığımızı açıklar.</p>
 
-    <h2>1. Topladığımız bilgiler</h2>
-    <ul>
-        <li><strong>Hesap bilgileri</strong>: e-posta adresi, görünen ad, profil avatarı, kimlik doğrulama tokenları.</li>
-        <li><strong>Görevler ve gruplar</strong>: başlıklar, açıklamalar, tarihler, tekrar ayarları, tamamlanma durumu, grup üyelikleri ve atadığınız roller.</li>
-        <li><strong>DoneBot ile sohbet (AI asistan)</strong>: uygulama içi DoneBot asistanına gönderdiğiniz mesajlar, işlenmek üzere Google&rsquo;ın Gemini API&rsquo;sine gönderilir. Konuşma geçmişi, sohbet sürekliliği için cihazınızda ve sunucumuzda saklanır.</li>
-        <li><strong>Cihaz ve bildirim tokenları</strong>: Firebase Cloud Messaging tokenları, cihaz tanımlayıcıları ve uygulama sürümü.</li>
-        <li><strong>Teşhis verileri</strong>: Firebase Crashlytics çökme raporları ve Firebase Analytics kullanım olayları. (Mevcut olduğunda) uygulama ayarlarından devre dışı bırakabilirsiniz.</li>
-    </ul>
+    <div class="card-group">
+        <h2>1. Topladığımız bilgiler</h2>
+        <ul>
+            <li><strong>Hesap bilgileri</strong>: e-posta adresi, görünen ad, profil avatarı, kimlik doğrulama tokenları.</li>
+            <li><strong>Görevler ve gruplar</strong>: başlıklar, açıklamalar, tarihler, tekrar ayarları, tamamlanma durumu, grup üyelikleri ve atadığınız roller.</li>
+            <li><strong>DoneBot ile sohbet (AI asistan)</strong>: uygulama içi DoneBot asistanına gönderdiğiniz mesajlar, işlenmek üzere Google&rsquo;ın Gemini API&rsquo;sine gönderilir. Konuşma geçmişi, sohbet sürekliliği için cihazınızda ve sunucumuzda saklanır.</li>
+            <li><strong>Cihaz ve bildirim tokenları</strong>: Firebase Cloud Messaging tokenları, cihaz tanımlayıcıları ve uygulama sürümü.</li>
+            <li><strong>Teşhis verileri</strong>: Firebase Crashlytics çökme raporları ve Firebase Analytics kullanım olayları. (Mevcut olduğunda) uygulama ayarlarından devre dışı bırakabilirsiniz.</li>
+        </ul>
+    </div>
 
-    <h2>2. Bilgileri nasıl kullanırız</h2>
-    <ul>
-        <li>Sizi doğrulamak ve verilerinizi cihazlar arasında senkronize tutmak için.</li>
-        <li>Görev hatırlatmaları, grup davetleri ve sahiplik değişikliği bildirimleri göndermek için.</li>
-        <li>AI sohbet isteklerini Google Gemini üzerinden işlemek için (girdi, çıkarım amacıyla Google&rsquo;a gönderilir; Vertex AI şartlarına göre Google&rsquo;ın modellerini eğitmek için kullanılmaz).</li>
-        <li>Çökmeleri teşhis etmek ve istikrarı artırmak için.</li>
-    </ul>
+    <div class="card-group">
+        <h2>2. Bilgileri nasıl kullanırız</h2>
+        <ul>
+            <li>Sizi doğrulamak ve verilerinizi cihazlar arasında senkronize tutmak için.</li>
+            <li>Görev hatırlatmaları, grup davetleri ve sahiplik değişikliği bildirimleri göndermek için.</li>
+            <li>AI sohbet isteklerini Google Gemini üzerinden işlemek için (girdi, çıkarım amacıyla Google&rsquo;a gönderilir; Vertex AI şartlarına göre Google&rsquo;ın modellerini eğitmek için kullanılmaz).</li>
+            <li>Çökmeleri teşhis etmek ve istikrarı artırmak için.</li>
+        </ul>
+    </div>
 
-    <h2>3. Paylaşım</h2>
-    <p>Verilerinizi yalnızca şunlarla paylaşırız:</p>
-    <ul>
-        <li><strong>Grup üyeleri</strong>: bir grup içindeki görevler, yorumlar ve etkinlikler o grubun tüm üyelerine görünür.</li>
-        <li><strong>Hizmet sağlayıcılar</strong>: Google Firebase (auth, FCM, Crashlytics, Analytics, AI Logic), Render (sunucu barındırma) ve standart altyapı alt-işleyicileri.</li>
-    </ul>
-    <p>Kişisel verilerinizi satmayız.</p>
+    <div class="card-group">
+        <h2>3. Paylaşım</h2>
+        <p>Verilerinizi yalnızca şunlarla paylaşırız:</p>
+        <ul>
+            <li><strong>Grup üyeleri</strong>: bir grup içindeki görevler, yorumlar ve etkinlikler o grubun tüm üyelerine görünür.</li>
+            <li><strong>Hizmet sağlayıcılar</strong>: Google Firebase (auth, FCM, Crashlytics, Analytics, AI Logic), Render (sunucu barındırma) ve standart altyapı alt-işleyicileri.</li>
+        </ul>
+        <p>Kişisel verilerinizi satmayız.</p>
+    </div>
 
-    <h2>4. Veri saklama ve silme</h2>
-    <p>Hesabınızı istediğiniz zaman <em>Ayarlar &rarr; Hesap &rarr; Hesabı Sil</em> yolundan silebilirsiniz. Sildiğinizde:</p>
-    <ul>
-        <li>Tüm kişisel görevleriniz, sohbet mesajlarınız, grup üyelikleriniz ve cihaz tokenlarınız aynı işlemde silinir.</li>
-        <li>Sahibi olduğunuz gruplar başka bir üyeye devredilir (yöneticilik rolü kalan üyelerden rastgele birine geçer, mevcut yöneticiler tercih edilir) ya da grupta tek üye sizseniz tamamen silinir.</li>
-        <li>Yenileme tokenları ve aktif oturumlar iptal edilir.</li>
-        <li>Felaket kurtarma için yedeklerde kalan veriler en fazla 30 gün boyunca saklanabilir.</li>
-    </ul>
+    <div class="card-group">
+        <h2>4. Veri saklama ve silme</h2>
+        <p>Hesabınızı istediğiniz zaman <em>Ayarlar &rarr; Hesap &rarr; Hesabı Sil</em> yolundan silebilirsiniz. Sildiğinizde:</p>
+        <ul>
+            <li>Tüm kişisel görevleriniz, sohbet mesajlarınız, grup üyelikleriniz ve cihaz tokenlarınız aynı işlemde silinir.</li>
+            <li>Sahibi olduğunuz gruplar başka bir üyeye devredilir (yöneticilik rolü kalan üyelerden rastgele birine geçer, mevcut yöneticiler tercih edilir) ya da grupta tek üye sizseniz tamamen silinir.</li>
+            <li>Yenileme tokenları ve aktif oturumlar iptal edilir.</li>
+            <li>Felaket kurtarma için yedeklerde kalan veriler en fazla 30 gün boyunca saklanabilir.</li>
+        </ul>
+    </div>
 
-    <h2>5. Haklarınız (GDPR / KVKK)</h2>
-    <p>Kişisel verilerinize erişim, düzeltme veya silme talebinde bulunabilirsiniz. Silme için en hızlı yol uygulama içi akıştır. Diğer talepler için aşağıdaki adresten bize ulaşın.</p>
+    <div class="card-group">
+        <h2>5. Haklarınız (GDPR / KVKK)</h2>
+        <p>Kişisel verilerinize erişim, düzeltme veya silme talebinde bulunabilirsiniz. Silme için en hızlı yol uygulama içi akıştır. Diğer talepler için aşağıdaki adresten bize ulaşın.</p>
+    </div>
 
-    <h2>6. Çocuklar</h2>
-    <p>DoneBot, 13 yaş altındaki çocuklara (veya bulunduğunuz ülkedeki eşdeğer asgari yaşa) yönelik değildir. Çocuklardan bilerek kişisel bilgi toplamayız.</p>
+    <div class="card-group">
+        <h2>6. Çocuklar</h2>
+        <p>DoneBot, 13 yaş altındaki çocuklara (veya bulunduğunuz ülkedeki eşdeğer asgari yaşa) yönelik değildir. Çocuklardan bilerek kişisel bilgi toplamayız.</p>
+    </div>
 
-    <h2>7. Bu politikanın değişiklikleri</h2>
-    <p>Bu politikayı zaman zaman güncelleyebiliriz. Üstteki "Son güncelleme" tarihi, en son değişikliği yansıtır. Önemli değişiklikler mümkün olduğunda uygulama içinde vurgulanır.</p>
+    <div class="card-group">
+        <h2>7. Bu politikanın değişiklikleri</h2>
+        <p>Bu politikayı zaman zaman güncelleyebiliriz. Üstteki "Son güncelleme" tarihi, en son değişikliği yansıtır. Önemli değişiklikler mümkün olduğunda uygulama içinde vurgulanır.</p>
+    </div>
 
-    <h2>8. İletişim</h2>
-    <p>Sorularınız için <a href="mailto:support@donebot.app">support@donebot.app</a> adresinden bize ulaşın.</p>
+    <div class="card-group">
+        <h2>8. İletişim</h2>
+        <p>Sorularınız için <a href="mailto:support@donebot.app">support@donebot.app</a> adresinden bize ulaşın.</p>
+    </div>
 </section>
+
+<div class="footer-signature">
+    <span data-lang-text-en="Made with care · İstanbul" data-lang-text-tr="İtinayla yapıldı · İstanbul">Made with care · İstanbul</span>
+</div>
 
 <script>
     (function() {
         var STORAGE_KEY = 'donebot_legal_lang';
         var sections = document.querySelectorAll('[data-lang]');
         var buttons = document.querySelectorAll('.lang-pill button[data-set]');
+        var langTextNodes = document.querySelectorAll('[data-lang-text-en]');
 
         function pickInitialLang() {
             var stored = null;
@@ -221,6 +388,12 @@
             });
             buttons.forEach(function(b) {
                 b.setAttribute('aria-pressed', b.getAttribute('data-set') === lang ? 'true' : 'false');
+            });
+            langTextNodes.forEach(function(node) {
+                var attr = 'data-lang-text-' + lang;
+                if (node.hasAttribute(attr)) {
+                    node.textContent = node.getAttribute(attr);
+                }
             });
             document.documentElement.setAttribute('lang', lang);
             try { localStorage.setItem(STORAGE_KEY, lang); } catch (e) { /* private mode */ }
