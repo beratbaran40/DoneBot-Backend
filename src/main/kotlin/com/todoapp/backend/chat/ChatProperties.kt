@@ -19,4 +19,8 @@ data class ChatProperties(
     val maxHistoryTurns: Int = 10,
     val temperature: Float = 0.2f,
     val maxOutputTokens: Int = 1024,
+    /** Per-user request cap in any 60s window. Keeps a runaway client from spending Vertex tokens. */
+    val rateLimitPerMinute: Int = 30,
+    /** Per-user request cap in any 24h window. Soft daily ceiling. */
+    val rateLimitPerDay: Int = 500,
 )
