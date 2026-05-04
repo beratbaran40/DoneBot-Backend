@@ -203,9 +203,12 @@ class ChatToolService(
                 recurrence = recurrence,
             ),
         )
+        // Write-tool responses omit the numeric id — the model already had it as input
+        // (or doesn't need one for confirmation), and we don't want it surfacing in the
+        // user-facing reply.
         return objectValue(
             "ok" to boolValue(true),
-            "task" to taskValue(saved),
+            "task" to taskValue(saved, includeId = false),
         )
     }
 
@@ -218,21 +221,38 @@ class ChatToolService(
         if (task.familyGroupId != null) {
             return errorPayload("group_task_blocked: shared group tasks must be edited from the group screen, not chat")
         }
-        args.fields["title"]?.stringValue?.takeIf { it.isNotBlank() }?.let { task.title = it }
+        // Track whether any field actually changed so the model can phrase its reply
+        // without claiming a change that didn't happen ("Already at 3pm — nothing to do").
+        var changed = false
+        args.fields["title"]?.stringValue?.takeIf { it.isNotBlank() }?.let {
+            if (it != task.title) { task.title = it; changed = true }
+        }
         args.fields["date"]?.stringValue?.takeIf { it.isNotBlank() }?.let {
-            task.date = LocalDate.parse(it).toEpochDay()
+            val parsed = LocalDate.parse(it).toEpochDay()
+            if (parsed != task.date) { task.date = parsed; changed = true }
         }
         args.fields["timeStart"]?.stringValue?.takeIf { it.isNotBlank() }?.let {
-            task.timeStart = parseTime(it)
+            val parsed = parseTime(it)
+            if (parsed != task.timeStart) { task.timeStart = parsed; changed = true }
         }
         args.fields["timeEnd"]?.stringValue?.takeIf { it.isNotBlank() }?.let {
-            task.timeEnd = parseTime(it)
+            val parsed = parseTime(it)
+            if (parsed != task.timeEnd) { task.timeEnd = parsed; changed = true }
         }
-        args.fields["description"]?.stringValue?.let { task.description = it.ifBlank { null } }
+        args.fields["description"]?.stringValue?.let {
+            val newValue = it.ifBlank { null }
+            if (newValue != task.description) { task.description = newValue; changed = true }
+        }
         args.fields["category"]?.stringValue?.takeIf { it.isNotBlank() }?.let { raw ->
-            runCatching { TaskCategory.valueOf(raw.uppercase()) }.getOrNull()?.let { task.category = it }
+            runCatching { TaskCategory.valueOf(raw.uppercase()) }.getOrNull()?.let {
+                if (it != task.category) { task.category = it; changed = true }
+            }
         }
-        return objectValue("ok" to boolValue(true), "task" to taskValue(taskRepo.save(task)))
+        return objectValue(
+            "ok" to boolValue(true),
+            "noop" to boolValue(!changed),
+            "task" to taskValue(taskRepo.save(task), includeId = false),
+        )
     }
 
     private fun runDeleteTask(userId: Long, args: Struct): Value {
@@ -244,8 +264,13 @@ class ChatToolService(
         if (task.familyGroupId != null) {
             return errorPayload("group_task_blocked: shared group tasks must be edited from the group screen, not chat")
         }
+        // Capture title for the model's confirmation reply (no id leak).
+        val deletedTitle = task.title
         taskRepo.delete(task)
-        return objectValue("ok" to boolValue(true), "deletedId" to longValue(taskId))
+        return objectValue(
+            "ok" to boolValue(true),
+            "deletedTitle" to stringValue(deletedTitle),
+        )
     }
 
     private fun runSetTaskCompletion(userId: Long, args: Struct): Value {
@@ -259,8 +284,13 @@ class ChatToolService(
         if (task.familyGroupId != null) {
             return errorPayload("group_task_blocked: shared group tasks must be edited from the group screen, not chat")
         }
+        val noop = task.isCompleted == isCompleted
         task.isCompleted = isCompleted
-        return objectValue("ok" to boolValue(true), "task" to taskValue(taskRepo.save(task)))
+        return objectValue(
+            "ok" to boolValue(true),
+            "noop" to boolValue(noop),
+            "task" to taskValue(taskRepo.save(task), includeId = false),
+        )
     }
 
     private fun runSetTaskSecret(userId: Long, args: Struct): Value {
@@ -274,8 +304,13 @@ class ChatToolService(
         if (task.familyGroupId != null) {
             return errorPayload("group_task_blocked: shared group tasks must be edited from the group screen, not chat")
         }
+        val noop = task.isSecret == isSecret
         task.isSecret = isSecret
-        return objectValue("ok" to boolValue(true), "task" to taskValue(taskRepo.save(task)))
+        return objectValue(
+            "ok" to boolValue(true),
+            "noop" to boolValue(noop),
+            "task" to taskValue(taskRepo.save(task), includeId = false),
+        )
     }
 
     // -------------------- Bulk write tools --------------------
@@ -333,14 +368,14 @@ class ChatToolService(
                 failed.add(id to (e.message ?: "save failed"))
             }
         }
+        // Failures are reported by reason only — no ids — so the model can summarize counts
+        // ("3 succeeded, 1 failed because it was a group task") without leaking ids.
         return objectValue(
             "ok" to boolValue(true),
             "succeededCount" to longValue(succeeded.size.toLong()),
             "failedCount" to longValue(failed.size.toLong()),
-            "failed" to listValue(
-                failed.map { (id, reason) ->
-                    objectValue("id" to longValue(id), "reason" to stringValue(reason))
-                },
+            "failedReasons" to listValue(
+                failed.map { (_, reason) -> stringValue(reason) }.distinct(),
             ),
         )
     }
@@ -353,18 +388,25 @@ class ChatToolService(
             "count" to longValue(tasks.size.toLong()),
         )
 
-    private fun taskValue(task: TaskEntity): Value =
-        objectValue(
-            "id" to longValue(task.id),
-            "title" to stringValue(task.title),
-            "date" to stringValue(LocalDate.ofEpochDay(task.date).toString()),
-            "timeStart" to stringValue(formatTime(task.timeStart)),
-            "timeEnd" to stringValue(formatTime(task.timeEnd)),
-            "isCompleted" to boolValue(task.isCompleted),
-            "isSecret" to boolValue(task.isSecret),
-            "category" to stringValue(task.category.name),
-            "recurrence" to stringValue(task.recurrence.name),
-        )
+    /**
+     * Read-tool callers default to `includeId = true` — the model needs ids to chain
+     * into write tools (e.g., findTaskByTitle → deleteTask). Write-tool callers pass
+     * `false`: the model already had the id as input or doesn't need one for confirmation,
+     * and we want to keep ids out of the model's reply context as defense in depth.
+     */
+    private fun taskValue(task: TaskEntity, includeId: Boolean = true): Value {
+        val struct = Struct.newBuilder()
+        if (includeId) struct.putFields("id", longValue(task.id))
+        struct.putFields("title", stringValue(task.title))
+        struct.putFields("date", stringValue(LocalDate.ofEpochDay(task.date).toString()))
+        struct.putFields("timeStart", stringValue(formatTime(task.timeStart)))
+        struct.putFields("timeEnd", stringValue(formatTime(task.timeEnd)))
+        struct.putFields("isCompleted", boolValue(task.isCompleted))
+        struct.putFields("isSecret", boolValue(task.isSecret))
+        struct.putFields("category", stringValue(task.category.name))
+        struct.putFields("recurrence", stringValue(task.recurrence.name))
+        return Value.newBuilder().setStructValue(struct.build()).build()
+    }
 
     private fun parseTime(hhmm: String): Long {
         val time = LocalTime.parse(hhmm)
