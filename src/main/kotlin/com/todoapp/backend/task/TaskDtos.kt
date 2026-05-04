@@ -18,6 +18,12 @@ data class TaskRequest(
     val category: TaskCategory? = null,
     @field:Size(max = 64) val customCategoryName: String? = null,
     val recurrence: Recurrence? = null,
+    val isAllDay: Boolean = false,
+    val reminderOffsetMinutes: Long = 0L,
+    val locationLat: Double? = null,
+    val locationLng: Double? = null,
+    @field:Size(max = 120) val locationName: String? = null,
+    @field:Size(max = 500) val locationAddress: String? = null,
 )
 
 data class TaskUserData(
@@ -41,6 +47,12 @@ data class TaskData(
     val category: TaskCategory,
     val customCategoryName: String?,
     val recurrence: Recurrence,
+    val isAllDay: Boolean = false,
+    val reminderOffsetMinutes: Long = 0L,
+    val locationLat: Double? = null,
+    val locationLng: Double? = null,
+    val locationName: String? = null,
+    val locationAddress: String? = null,
     val photoUrls: List<String> = emptyList(),
 )
 

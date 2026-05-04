@@ -34,6 +34,12 @@ class TaskService(
             category = category,
             customCategoryName = if (category == TaskCategory.OTHER) req.customCategoryName?.takeIf { it.isNotBlank() } else null,
             recurrence = req.recurrence ?: Recurrence.NONE,
+            isAllDay = req.isAllDay,
+            reminderOffsetMinutes = req.reminderOffsetMinutes,
+            locationLat = req.locationLat?.toBigDecimal(),
+            locationLng = req.locationLng?.toBigDecimal(),
+            locationName = req.locationName?.takeIf { it.isNotBlank() },
+            locationAddress = req.locationAddress?.takeIf { it.isNotBlank() },
         )
         val saved = tasks.save(entity)
         notifyAssignmentIfNeeded(
@@ -72,6 +78,12 @@ class TaskService(
             null
         }
         entity.recurrence = req.recurrence ?: entity.recurrence
+        entity.isAllDay = req.isAllDay
+        entity.reminderOffsetMinutes = req.reminderOffsetMinutes
+        entity.locationLat = req.locationLat?.toBigDecimal()
+        entity.locationLng = req.locationLng?.toBigDecimal()
+        entity.locationName = req.locationName?.takeIf { it.isNotBlank() }
+        entity.locationAddress = req.locationAddress?.takeIf { it.isNotBlank() }
         val saved = tasks.save(entity)
         notifyAssignmentIfNeeded(
             actorId = ownerId,
@@ -169,6 +181,12 @@ class TaskService(
             category = category,
             customCategoryName = customCategoryName,
             recurrence = recurrence,
+            isAllDay = isAllDay,
+            reminderOffsetMinutes = reminderOffsetMinutes,
+            locationLat = locationLat?.toDouble(),
+            locationLng = locationLng?.toDouble(),
+            locationName = locationName,
+            locationAddress = locationAddress,
             photoUrls = urls,
         )
     }

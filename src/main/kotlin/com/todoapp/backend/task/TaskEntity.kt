@@ -70,6 +70,24 @@ class TaskEntity(
     @Column(name = "recurrence", nullable = false, length = 16)
     var recurrence: Recurrence = Recurrence.NONE,
 
+    @Column(name = "is_all_day", nullable = false)
+    var isAllDay: Boolean = false,
+
+    @Column(name = "reminder_offset_minutes", nullable = false)
+    var reminderOffsetMinutes: Long = 0L,
+
+    @Column(name = "location_lat", precision = 9, scale = 6)
+    var locationLat: java.math.BigDecimal? = null,
+
+    @Column(name = "location_lng", precision = 9, scale = 6)
+    var locationLng: java.math.BigDecimal? = null,
+
+    @Column(name = "location_name", length = 120)
+    var locationName: String? = null,
+
+    @Column(name = "location_address", length = 500)
+    var locationAddress: String? = null,
+
     @Column(nullable = false, updatable = false)
     var createdAt: Instant = Instant.now(),
 
