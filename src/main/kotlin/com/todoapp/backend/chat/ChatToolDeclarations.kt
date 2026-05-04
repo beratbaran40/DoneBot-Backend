@@ -34,6 +34,7 @@ object ChatToolDeclarations {
                 bulkSetTaskCompletion(),
                 bulkDeleteTasks(),
                 bulkRescheduleTasks(),
+                setTaskLocation(),
             ),
         )
         .build()
@@ -92,7 +93,9 @@ object ChatToolDeclarations {
         FunctionDeclaration.newBuilder()
             .setName("createTask")
             .setDescription(
-                "Creates a new personal task. timeEnd defaults to timeStart+30min when missing. " +
+                "Creates a new personal task. " +
+                    "timeStart is required UNLESS isAllDay=true (then omit timeStart/timeEnd). " +
+                    "timeEnd defaults to timeStart+30min when missing. " +
                     "Category defaults to PERSONAL. Recurrence defaults to NONE.",
             )
             .setParameters(
@@ -100,16 +103,44 @@ object ChatToolDeclarations {
                     .setType(Type.OBJECT)
                     .putProperties("title", stringSchema("Task title."))
                     .putProperties("date", isoDateSchema("Task date, ISO YYYY-MM-DD."))
-                    .putProperties("timeStart", timeSchema("Start time HH:mm in 24h."))
+                    .putProperties(
+                        "timeStart",
+                        timeSchema(
+                            "Start time HH:mm in 24h. Omit when isAllDay=true.",
+                        ),
+                    )
                     .putProperties("timeEnd", timeSchema("End time HH:mm in 24h. Optional."))
+                    .putProperties(
+                        "isAllDay",
+                        Schema.newBuilder()
+                            .setType(Type.BOOLEAN)
+                            .setDescription(
+                                "True for all-day tasks (no specific clock time). " +
+                                    "Set when the user says 'whole day', 'all day', 'tüm gün', 'günboyu', etc. " +
+                                    "When true, omit timeStart and timeEnd. Defaults to false.",
+                            )
+                            .build(),
+                    )
                     .putProperties("description", stringSchema("Optional description."))
                     .putProperties(
                         "category",
                         Schema.newBuilder()
                             .setType(Type.STRING)
                             .setDescription(
-                                "Category. One of: PERSONAL, WORK, HEALTH, BIRTHDAY, CUSTOM. " +
-                                    "Defaults to PERSONAL.",
+                                "Category. One of: SHOPPING, MEDICINE, HEALTH, WORK, STUDY, BIRTHDAY, PERSONAL, OTHER. " +
+                                    "Defaults to PERSONAL. Pick the best match from context " +
+                                    "(dentist/doctor → HEALTH, exam/study → STUDY, " +
+                                    "alışveriş/grocery → SHOPPING, ilaç/medicine → MEDICINE, " +
+                                    "iş/work → WORK, doğum günü/birthday → BIRTHDAY).",
+                            )
+                            .build(),
+                    )
+                    .putProperties(
+                        "customCategoryName",
+                        Schema.newBuilder()
+                            .setType(Type.STRING)
+                            .setDescription(
+                                "Custom label for OTHER category (max 64 chars). Ignored unless category=OTHER.",
                             )
                             .build(),
                     )
@@ -119,7 +150,19 @@ object ChatToolDeclarations {
                             .setType(Type.STRING)
                             .setDescription(
                                 "Recurrence. One of: NONE, DAILY, WEEKLY, MONTHLY, YEARLY. " +
+                                    "Set when the user says 'every week', 'her hafta', 'monthly', etc. " +
                                     "Defaults to NONE.",
+                            )
+                            .build(),
+                    )
+                    .putProperties(
+                        "reminderOffsetMinutes",
+                        Schema.newBuilder()
+                            .setType(Type.INTEGER)
+                            .setDescription(
+                                "Reminder offset in minutes before the task. " +
+                                    "0 = no offset (default), 30 = remind 30 min before, etc. " +
+                                    "Set when the user says 'remind me 15 min before', 'hatırlat 10 dakika önce', etc.",
                             )
                             .build(),
                     )
@@ -130,7 +173,39 @@ object ChatToolDeclarations {
                             .setDescription("Mark task as secret (biometric-protected). Defaults to false.")
                             .build(),
                     )
-                    .addAllRequired(listOf("title", "date", "timeStart"))
+                    .putProperties(
+                        "locationName",
+                        stringSchema(
+                            "Short label for the location, e.g. 'Acıbadem Hastanesi', 'Office', 'Galata'. " +
+                                "Optional. Set when the user mentions a place (\"at Kadıköy\", \"in Manhattan\").",
+                        ),
+                    )
+                    .putProperties(
+                        "locationAddress",
+                        stringSchema(
+                            "Fuller address line if known, e.g. 'Bağdat Cd. No:123, Kadıköy/İstanbul'. " +
+                                "Optional. Often the same as locationName for short references.",
+                        ),
+                    )
+                    .putProperties(
+                        "locationLat",
+                        Schema.newBuilder()
+                            .setType(Type.NUMBER)
+                            .setDescription(
+                                "Latitude in decimal degrees. Optional. Only set if YOU truly know the " +
+                                    "coordinates — never fabricate. The client refines coordinates via its " +
+                                    "place picker.",
+                            )
+                            .build(),
+                    )
+                    .putProperties(
+                        "locationLng",
+                        Schema.newBuilder()
+                            .setType(Type.NUMBER)
+                            .setDescription("Longitude in decimal degrees. Optional. See locationLat.")
+                            .build(),
+                    )
+                    .addAllRequired(listOf("title", "date"))
                     .build(),
             )
             .build()
@@ -140,7 +215,7 @@ object ChatToolDeclarations {
             .setName("updateTask")
             .setDescription(
                 "Updates fields on an existing task. Only the user's own personal tasks are " +
-                    "editable — group tasks return an error.",
+                    "editable — group tasks return an error. Pass only the fields you want changed.",
             )
             .setParameters(
                 Schema.newBuilder()
@@ -150,10 +225,121 @@ object ChatToolDeclarations {
                     .putProperties("date", isoDateSchema("New date YYYY-MM-DD (optional)."))
                     .putProperties("timeStart", timeSchema("New start HH:mm (optional)."))
                     .putProperties("timeEnd", timeSchema("New end HH:mm (optional)."))
+                    .putProperties(
+                        "isAllDay",
+                        Schema.newBuilder()
+                            .setType(Type.BOOLEAN)
+                            .setDescription(
+                                "Set true to convert to all-day, false to convert back to a timed task. " +
+                                    "Optional.",
+                            )
+                            .build(),
+                    )
                     .putProperties("description", stringSchema("New description (optional)."))
                     .putProperties(
                         "category",
-                        Schema.newBuilder().setType(Type.STRING).build(),
+                        Schema.newBuilder()
+                            .setType(Type.STRING)
+                            .setDescription(
+                                "New category (optional). One of: SHOPPING, MEDICINE, HEALTH, WORK, STUDY, BIRTHDAY, PERSONAL, OTHER.",
+                            )
+                            .build(),
+                    )
+                    .putProperties(
+                        "customCategoryName",
+                        Schema.newBuilder()
+                            .setType(Type.STRING)
+                            .setDescription(
+                                "Custom label for OTHER category (max 64 chars). Optional. Ignored unless category=OTHER.",
+                            )
+                            .build(),
+                    )
+                    .putProperties(
+                        "recurrence",
+                        Schema.newBuilder()
+                            .setType(Type.STRING)
+                            .setDescription(
+                                "New recurrence (optional). One of: NONE, DAILY, WEEKLY, MONTHLY, YEARLY.",
+                            )
+                            .build(),
+                    )
+                    .putProperties(
+                        "reminderOffsetMinutes",
+                        Schema.newBuilder()
+                            .setType(Type.INTEGER)
+                            .setDescription(
+                                "New reminder offset in minutes before the task. 0 to clear. Optional.",
+                            )
+                            .build(),
+                    )
+                    .putProperties(
+                        "isSecret",
+                        Schema.newBuilder()
+                            .setType(Type.BOOLEAN)
+                            .setDescription("Toggle biometric-protected flag. Optional.")
+                            .build(),
+                    )
+                    .putProperties(
+                        "locationName",
+                        stringSchema("New location label (optional). Pass an empty string to clear."),
+                    )
+                    .putProperties(
+                        "locationAddress",
+                        stringSchema("New full address line (optional). Pass an empty string to clear."),
+                    )
+                    .putProperties(
+                        "locationLat",
+                        Schema.newBuilder()
+                            .setType(Type.NUMBER)
+                            .setDescription("New latitude (optional). Never fabricate.")
+                            .build(),
+                    )
+                    .putProperties(
+                        "locationLng",
+                        Schema.newBuilder()
+                            .setType(Type.NUMBER)
+                            .setDescription("New longitude (optional). Never fabricate.")
+                            .build(),
+                    )
+                    .addAllRequired(listOf("taskId"))
+                    .build(),
+            )
+            .build()
+
+    private fun setTaskLocation(): FunctionDeclaration =
+        FunctionDeclaration.newBuilder()
+            .setName("setTaskLocation")
+            .setDescription(
+                "Updates ONLY the location fields on an existing task. Use this when the user " +
+                    "explicitly wants to add/change/clear the location and nothing else. " +
+                    "Pass empty strings for locationName/locationAddress to clear. " +
+                    "Group tasks return an error.",
+            )
+            .setParameters(
+                Schema.newBuilder()
+                    .setType(Type.OBJECT)
+                    .putProperties("taskId", longSchema("Numeric task id."))
+                    .putProperties(
+                        "locationName",
+                        stringSchema("Location label, e.g. 'Acıbadem Hastanesi'. Empty string clears."),
+                    )
+                    .putProperties(
+                        "locationAddress",
+                        stringSchema("Full address line. Empty string clears."),
+                    )
+                    .putProperties(
+                        "locationLat",
+                        Schema.newBuilder()
+                            .setType(Type.NUMBER)
+                            .setDescription("Latitude (optional). Never fabricate; client refines via picker.")
+                            .build(),
+                    )
+                    .putProperties(
+                        "locationLng",
+                        Schema.newBuilder()
+                            .setType(Type.NUMBER)
+                            .setDescription("Longitude (optional). Never fabricate.")
+                            .build(),
                     )
                     .addAllRequired(listOf("taskId"))
                     .build(),

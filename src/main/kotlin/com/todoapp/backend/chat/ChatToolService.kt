@@ -56,6 +56,7 @@ class ChatToolService(
                 "bulkSetTaskCompletion" -> runBulkSetTaskCompletion(userId, args)
                 "bulkDeleteTasks" -> runBulkDeleteTasks(userId, args)
                 "bulkRescheduleTasks" -> runBulkRescheduleTasks(userId, args)
+                "setTaskLocation" -> runSetTaskLocation(userId, args)
                 else -> errorPayload("Unknown tool: $name")
             }
         }.getOrElse {
@@ -178,17 +179,44 @@ class ChatToolService(
             return errorPayload("title is required")
         }
         val date = LocalDate.parse(args.fields["date"]?.stringValue.orEmpty())
-        val start = parseTime(args.fields["timeStart"]?.stringValue.orEmpty())
-        val end = args.fields["timeEnd"]?.stringValue?.takeIf { it.isNotBlank() }?.let(::parseTime)
-            ?: (start + DEFAULT_DURATION_SECONDS).coerceAtMost(SECONDS_PER_DAY - 1)
+        val isAllDay = args.fields["isAllDay"]?.boolValue ?: false
+        // For all-day tasks we normalize to 00:00 → 23:59:59 so listing/sorting code paths
+        // that key off timeStart/timeEnd keep working — the client uses isAllDay to drive
+        // UI rendering (suppress the time chip), not the timestamps themselves.
+        val start = if (isAllDay) {
+            0L
+        } else {
+            args.fields["timeStart"]?.stringValue?.takeIf { it.isNotBlank() }?.let(::parseTime)
+                ?: return errorPayload("timeStart is required (or set isAllDay=true)")
+        }
+        val end = if (isAllDay) {
+            SECONDS_PER_DAY - 1
+        } else {
+            args.fields["timeEnd"]?.stringValue?.takeIf { it.isNotBlank() }?.let(::parseTime)
+                ?: (start + DEFAULT_DURATION_SECONDS).coerceAtMost(SECONDS_PER_DAY - 1)
+        }
         val description = args.fields["description"]?.stringValue?.takeIf { it.isNotBlank() }
         val category = args.fields["category"]?.stringValue?.takeIf { it.isNotBlank() }
             ?.let { runCatching { TaskCategory.valueOf(it.uppercase()) }.getOrNull() }
             ?: TaskCategory.PERSONAL
+        val customCategoryName = args.fields["customCategoryName"]?.stringValue?.takeIf { it.isNotBlank() }
+            ?.takeIf { category == TaskCategory.OTHER }
+            ?.take(MAX_CUSTOM_CATEGORY_NAME)
         val recurrence = args.fields["recurrence"]?.stringValue?.takeIf { it.isNotBlank() }
             ?.let { runCatching { Recurrence.valueOf(it.uppercase()) }.getOrNull() }
             ?: Recurrence.NONE
+        val reminderOffsetMinutes = args.fields["reminderOffsetMinutes"]?.numberValue?.toLong()
+            ?.coerceAtLeast(0L)
+            ?: 0L
         val isSecret = args.fields["isSecret"]?.boolValue ?: false
+        val locationName = args.fields["locationName"]?.stringValue?.takeIf { it.isNotBlank() }
+            ?.take(MAX_LOCATION_NAME)
+        val locationAddress = args.fields["locationAddress"]?.stringValue?.takeIf { it.isNotBlank() }
+            ?.take(MAX_LOCATION_ADDRESS)
+        val locationLat = args.fields["locationLat"]?.numberValue?.takeIf { it != 0.0 || locationName != null }
+            ?.toBigDecimal()
+        val locationLng = args.fields["locationLng"]?.numberValue?.takeIf { it != 0.0 || locationName != null }
+            ?.toBigDecimal()
 
         val saved = taskRepo.save(
             TaskEntity(
@@ -200,7 +228,14 @@ class ChatToolService(
                 timeEnd = end,
                 isSecret = isSecret,
                 category = category,
+                customCategoryName = customCategoryName,
                 recurrence = recurrence,
+                isAllDay = isAllDay,
+                reminderOffsetMinutes = reminderOffsetMinutes,
+                locationLat = locationLat,
+                locationLng = locationLng,
+                locationName = locationName,
+                locationAddress = locationAddress,
             ),
         )
         // Write-tool responses omit the numeric id — the model already had it as input
@@ -248,9 +283,106 @@ class ChatToolService(
                 if (it != task.category) { task.category = it; changed = true }
             }
         }
+        args.fields["customCategoryName"]?.stringValue?.let { raw ->
+            val newValue = raw.ifBlank { null }?.take(MAX_CUSTOM_CATEGORY_NAME)
+                ?.takeIf { task.category == TaskCategory.OTHER }
+            if (newValue != task.customCategoryName) {
+                task.customCategoryName = newValue
+                changed = true
+            }
+        }
+        args.fields["recurrence"]?.stringValue?.takeIf { it.isNotBlank() }?.let { raw ->
+            runCatching { Recurrence.valueOf(raw.uppercase()) }.getOrNull()?.let {
+                if (it != task.recurrence) { task.recurrence = it; changed = true }
+            }
+        }
+        args.fields["isAllDay"]?.let { raw ->
+            val newValue = raw.boolValue
+            if (newValue != task.isAllDay) {
+                task.isAllDay = newValue
+                // When converting to all-day, normalize timestamps so list queries stay sane.
+                if (newValue) {
+                    task.timeStart = 0L
+                    task.timeEnd = SECONDS_PER_DAY - 1
+                }
+                changed = true
+            }
+        }
+        args.fields["reminderOffsetMinutes"]?.let { raw ->
+            val newValue = raw.numberValue.toLong().coerceAtLeast(0L)
+            if (newValue != task.reminderOffsetMinutes) {
+                task.reminderOffsetMinutes = newValue
+                changed = true
+            }
+        }
+        args.fields["isSecret"]?.let { raw ->
+            val newValue = raw.boolValue
+            if (newValue != task.isSecret) {
+                task.isSecret = newValue
+                changed = true
+            }
+        }
+        // Location fields: empty-string clears, omitted leaves the existing value alone.
+        args.fields["locationName"]?.stringValue?.let { raw ->
+            val newValue = raw.takeIf { it.isNotBlank() }?.take(MAX_LOCATION_NAME)
+            if (newValue != task.locationName) {
+                task.locationName = newValue
+                changed = true
+            }
+        }
+        args.fields["locationAddress"]?.stringValue?.let { raw ->
+            val newValue = raw.takeIf { it.isNotBlank() }?.take(MAX_LOCATION_ADDRESS)
+            if (newValue != task.locationAddress) {
+                task.locationAddress = newValue
+                changed = true
+            }
+        }
+        args.fields["locationLat"]?.let { raw ->
+            val newValue = raw.numberValue.toBigDecimal()
+            if (newValue != task.locationLat) {
+                task.locationLat = newValue
+                changed = true
+            }
+        }
+        args.fields["locationLng"]?.let { raw ->
+            val newValue = raw.numberValue.toBigDecimal()
+            if (newValue != task.locationLng) {
+                task.locationLng = newValue
+                changed = true
+            }
+        }
         return objectValue(
             "ok" to boolValue(true),
             "noop" to boolValue(!changed),
+            "task" to taskValue(taskRepo.save(task), includeId = false),
+        )
+    }
+
+    private fun runSetTaskLocation(userId: Long, args: Struct): Value {
+        val taskId = args.fields["taskId"]?.numberValue?.toLong()
+            ?: return errorPayload("taskId is required")
+        val task = taskRepo.findById(taskId).orElse(null)
+            ?: return errorPayload("task not found")
+        if (task.ownerId != userId) return errorPayload("not your task")
+        if (task.familyGroupId != null) {
+            return errorPayload("group_task_blocked: shared group tasks must be edited from the group screen, not chat")
+        }
+        // Empty string in any field clears it; omitted means leave alone.
+        args.fields["locationName"]?.stringValue?.let { raw ->
+            task.locationName = raw.takeIf { it.isNotBlank() }?.take(MAX_LOCATION_NAME)
+        }
+        args.fields["locationAddress"]?.stringValue?.let { raw ->
+            task.locationAddress = raw.takeIf { it.isNotBlank() }?.take(MAX_LOCATION_ADDRESS)
+        }
+        args.fields["locationLat"]?.let { raw -> task.locationLat = raw.numberValue.toBigDecimal() }
+        args.fields["locationLng"]?.let { raw -> task.locationLng = raw.numberValue.toBigDecimal() }
+        // Pair-clear: clearing the name+address typically means dropping the pin too.
+        if (task.locationName == null && task.locationAddress == null) {
+            task.locationLat = null
+            task.locationLng = null
+        }
+        return objectValue(
+            "ok" to boolValue(true),
             "task" to taskValue(taskRepo.save(task), includeId = false),
         )
     }
@@ -401,10 +533,23 @@ class ChatToolService(
         struct.putFields("date", stringValue(LocalDate.ofEpochDay(task.date).toString()))
         struct.putFields("timeStart", stringValue(formatTime(task.timeStart)))
         struct.putFields("timeEnd", stringValue(formatTime(task.timeEnd)))
+        struct.putFields("isAllDay", boolValue(task.isAllDay))
         struct.putFields("isCompleted", boolValue(task.isCompleted))
         struct.putFields("isSecret", boolValue(task.isSecret))
         struct.putFields("category", stringValue(task.category.name))
+        if (task.customCategoryName != null) {
+            struct.putFields("customCategoryName", stringValue(task.customCategoryName!!))
+        }
         struct.putFields("recurrence", stringValue(task.recurrence.name))
+        if (task.reminderOffsetMinutes > 0L) {
+            struct.putFields("reminderOffsetMinutes", longValue(task.reminderOffsetMinutes))
+        }
+        if (task.locationName != null) {
+            struct.putFields("locationName", stringValue(task.locationName!!))
+        }
+        if (task.locationAddress != null) {
+            struct.putFields("locationAddress", stringValue(task.locationAddress!!))
+        }
         return Value.newBuilder().setStructValue(struct.build()).build()
     }
 
@@ -439,5 +584,8 @@ class ChatToolService(
         private const val WEEK_LOOKBACK_DAYS = 6L
         private const val MONTH_LOOKBACK_DAYS = 29L
         private const val PERCENT_SCALE = 100.0
+        private const val MAX_CUSTOM_CATEGORY_NAME = 64
+        private const val MAX_LOCATION_NAME = 120
+        private const val MAX_LOCATION_ADDRESS = 500
     }
 }
