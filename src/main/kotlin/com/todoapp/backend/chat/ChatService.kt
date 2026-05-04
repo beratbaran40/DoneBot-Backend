@@ -63,36 +63,40 @@ class ChatService(
         var promptTokens = 0L
         var responseTokens = 0L
         var totalTokens = 0L
-        repeat(props.maxToolIterations) {
+        val toolsCalled = mutableListOf<String>()
+        repeat(props.maxToolIterations) { iteration ->
             roundTrips++
             val response = vertex.generate(model, conversation)
             val usage = response.usageMetadata
             promptTokens += usage.promptTokenCount.toLong()
             responseTokens += usage.candidatesTokenCount.toLong()
             totalTokens += usage.totalTokenCount.toLong()
-            val candidate = response.candidatesList.firstOrNull()
-                ?: throw ResponseStatusException(HttpStatus.BAD_GATEWAY, "Empty response from model")
+            val candidate = response.candidatesList.firstOrNull() ?: run {
+                logTurn(
+                    userId, roundTrips, toolsCalled, promptTokens, responseTokens, totalTokens,
+                    System.currentTimeMillis() - started, refused = false, error = "empty_response",
+                )
+                throw ResponseStatusException(HttpStatus.BAD_GATEWAY, "Empty response from model")
+            }
             val parts = candidate.content.partsList
 
             val toolCalls = parts.filter { it.hasFunctionCall() }
             if (toolCalls.isEmpty()) {
-                val text = parts
+                val rawText = parts
                     .mapNotNull { if (it.hasText()) it.text else null }
                     .joinToString("\n")
                     .trim()
-                if (text.isBlank()) {
+                if (rawText.isBlank()) {
+                    logTurn(
+                        userId, roundTrips, toolsCalled, promptTokens, responseTokens, totalTokens,
+                        System.currentTimeMillis() - started, refused = false, error = "empty_text",
+                    )
                     throw ResponseStatusException(HttpStatus.BAD_GATEWAY, "Empty text from model")
                 }
+                val text = sanitizeUserFacingText(rawText)
                 val refused = looksLikeRefusal(text)
                 val ms = System.currentTimeMillis() - started
-                log.info(
-                    "Chat reply: user={} rt={} ms={} refused={}",
-                    userId, roundTrips, ms, refused,
-                )
-                log.info(
-                    "ChatCost user={} rt={} promptTok={} respTok={} totalTok={}",
-                    userId, roundTrips, promptTokens, responseTokens, totalTokens,
-                )
+                logTurn(userId, roundTrips, toolsCalled, promptTokens, responseTokens, totalTokens, ms, refused, error = null)
                 tracker.record(userId)
                 return ChatMessageResponse(
                     text = text,
@@ -101,6 +105,32 @@ class ChatService(
                         refused = refused,
                         serverMs = ms,
                     ),
+                )
+            }
+
+            toolsCalled += toolCalls.map { it.functionCall.name }
+
+            // Graceful tool-budget cap: stop spending iterations and return a coherent
+            // server-side fallback instead of throwing 502. The model can't summarize
+            // because we never hand back the function response, but the user gets a
+            // useful message rather than a generic error.
+            if (iteration == props.maxToolIterations - 1) {
+                val fallback = if (locale == "tr") {
+                    "Bu istek için beklediğimden daha fazla araç çağrısı gerekti ve durdum. " +
+                        "Daha küçük adımlar halinde tekrar dener misin?"
+                } else {
+                    "I needed more tool calls than expected and stopped. " +
+                        "Could you try again in smaller steps?"
+                }
+                val ms = System.currentTimeMillis() - started
+                logTurn(
+                    userId, roundTrips, toolsCalled, promptTokens, responseTokens, totalTokens,
+                    ms, refused = false, error = "tool_loop_cap",
+                )
+                tracker.record(userId)
+                return ChatMessageResponse(
+                    text = fallback,
+                    meta = ChatTurnMeta(roundTrips = roundTrips, refused = false, serverMs = ms),
                 )
             }
 
@@ -125,11 +155,56 @@ class ChatService(
                 .build()
         }
 
-        // Tool loop hit cap without a final text reply.
+        // Unreachable — the cap branch above always returns. Guard anyway.
+        val ms = System.currentTimeMillis() - started
+        logTurn(
+            userId, roundTrips, toolsCalled, promptTokens, responseTokens, totalTokens,
+            ms, refused = false, error = "loop_unreachable",
+        )
         throw ResponseStatusException(
             HttpStatus.BAD_GATEWAY,
             "Tool loop exceeded ${props.maxToolIterations} iterations",
         )
+    }
+
+    private fun logTurn(
+        userId: Long,
+        roundTrips: Int,
+        toolsCalled: List<String>,
+        promptTokens: Long,
+        responseTokens: Long,
+        totalTokens: Long,
+        ms: Long,
+        refused: Boolean,
+        error: String?,
+    ) {
+        // One line, machine-grep-able. Includes the tool list so we can see what the
+        // model actually invoked, plus latency and an error code when something went
+        // wrong (empty_text, tool_loop_cap, etc.).
+        log.info(
+            "ChatCost user={} rt={} tools={} promptTok={} respTok={} totalTok={} ms={} refused={} error={}",
+            userId,
+            roundTrips,
+            toolsCalled,
+            promptTokens,
+            responseTokens,
+            totalTokens,
+            ms,
+            refused,
+            error ?: "null",
+        )
+    }
+
+    /**
+     * Defense-in-depth scrubber for ID-shaped patterns the model might emit despite the
+     * system-prompt rule against mentioning ids. The model legitimately sees ids in
+     * tool inputs/outputs (it needs them to chain calls); we keep them out of the user
+     * reply by stripping `#1234`-style and `id: 1234`-style fragments.
+     */
+    private fun sanitizeUserFacingText(text: String): String {
+        var out = text
+        ID_LEAK_PATTERNS.forEach { out = it.replace(out, "") }
+        return out.replace(MULTISPACE, " ").trim()
     }
 
     private fun buildContextPreamble(userId: Long): String {
@@ -179,9 +254,22 @@ class ChatService(
             }
             Content.newBuilder()
                 .setRole(role)
-                .addParts(Part.newBuilder().setText(turn.content).build())
+                .addParts(Part.newBuilder().setText(sanitizeHistoryContent(turn.content)).build())
                 .build()
         }
+    }
+
+    /**
+     * Mitigate prompt-injection via history poisoning: a user could embed fake role
+     * markers ("System:", "Assistant:") or control characters in a prior turn that
+     * influence the next call. We strip them defensively. We do NOT try to detect
+     * malicious intent — just neutralize the most obvious vectors.
+     */
+    private fun sanitizeHistoryContent(text: String): String {
+        var out = text.replace(CONTROL_CHARS, "")
+        out = out.replace(ROLE_IMPERSONATION, "")
+        if (out.length > MAX_HISTORY_TURN_CHARS) out = out.take(MAX_HISTORY_TURN_CHARS)
+        return out
     }
 
     private fun userContent(text: String): Content =
@@ -197,9 +285,19 @@ class ChatService(
 
     companion object {
         private const val MAX_PREAMBLE_TASKS = 20
+        private const val MAX_HISTORY_TURN_CHARS = 4_000
         private val REFUSAL_PREFIXES = listOf(
             "Sorry, I can only help",
             "Üzgünüm, sadece bu uygulamadaki",
+        )
+        private val ID_LEAK_PATTERNS = listOf(
+            Regex("""#\d{1,12}\b"""),
+            Regex("""(?i)\bid\s*[:#=]?\s*\d{1,12}\b"""),
+        )
+        private val MULTISPACE = Regex("""\s{2,}""")
+        private val CONTROL_CHARS = Regex("""[\x00-\x08\x0B-\x1F\x7F]""")
+        private val ROLE_IMPERSONATION = Regex(
+            """(?im)^\s*(System|Assistant|User|Tool|Function)\s*[:>]\s*""",
         )
     }
 }
