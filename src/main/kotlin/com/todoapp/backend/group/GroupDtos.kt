@@ -68,6 +68,10 @@ data class GroupTaskRequest(
     val isCompleted: Boolean = false,
     val priority: String? = null,
     val assigneeId: Long? = null,
+    val locationLat: Double? = null,
+    val locationLng: Double? = null,
+    @field:jakarta.validation.constraints.Size(max = 120) val locationName: String? = null,
+    @field:jakarta.validation.constraints.Size(max = 500) val locationAddress: String? = null,
 )
 
 /**
@@ -86,6 +90,16 @@ data class GroupTaskUpdateRequest(
     val priority: String? = null,
     val assigneeId: Long? = null,
     val clearAssignee: Boolean = false,
+    val locationLat: Double? = null,
+    val locationLng: Double? = null,
+    @field:jakarta.validation.constraints.Size(max = 120) val locationName: String? = null,
+    @field:jakarta.validation.constraints.Size(max = 500) val locationAddress: String? = null,
+    /**
+     * Same JSON-can't-distinguish-null trick as `clearAssignee`. Set true to wipe all four
+     * location fields in one request; leave false to keep them as-is (or to overwrite via
+     * `locationName`/`locationLat` etc. if those are non-null).
+     */
+    val clearLocation: Boolean = false,
 )
 
 data class GroupTaskData(
@@ -97,6 +111,10 @@ data class GroupTaskData(
     val dueDate: Long?,
     val assignee: GroupMemberData?,
     val photoUrls: List<String> = emptyList(),
+    val locationLat: Double? = null,
+    val locationLng: Double? = null,
+    val locationName: String? = null,
+    val locationAddress: String? = null,
 )
 
 data class GroupTaskListData(

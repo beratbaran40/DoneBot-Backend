@@ -49,6 +49,10 @@ class GroupTaskService(
                 familyGroupId = groupId,
                 assignedToUserId = req.assigneeId,
                 priority = req.priority,
+                locationLat = req.locationLat?.toBigDecimal(),
+                locationLng = req.locationLng?.toBigDecimal(),
+                locationName = req.locationName?.takeIf { it.isNotBlank() },
+                locationAddress = req.locationAddress?.takeIf { it.isNotBlank() },
             )
         )
         activity.log(groupId, callerId, GroupActivityType.TASK_CREATED,
@@ -124,6 +128,20 @@ class GroupTaskService(
                 requireMemberOfGroup(groupId, req.assigneeId)
                 task.assignedToUserId = req.assigneeId
             }
+        }
+        // Location: clearLocation wipes everything; otherwise non-null fields overwrite.
+        // We deliberately don't preserve "name only / lat null" half-states from older clients —
+        // the picker always sends a complete set or nothing.
+        if (req.clearLocation) {
+            task.locationLat = null
+            task.locationLng = null
+            task.locationName = null
+            task.locationAddress = null
+        } else {
+            req.locationLat?.let { task.locationLat = it.toBigDecimal() }
+            req.locationLng?.let { task.locationLng = it.toBigDecimal() }
+            req.locationName?.takeIf { it.isNotBlank() }?.let { task.locationName = it }
+            req.locationAddress?.takeIf { it.isNotBlank() }?.let { task.locationAddress = it }
         }
         val saved = tasks.save(task)
         // Activity logging
@@ -235,6 +253,10 @@ class GroupTaskService(
             dueDate = joinDueDate(date, timeStart),
             assignee = assignee,
             photoUrls = urls,
+            locationLat = locationLat?.toDouble(),
+            locationLng = locationLng?.toDouble(),
+            locationName = locationName,
+            locationAddress = locationAddress,
         )
     }
 }
