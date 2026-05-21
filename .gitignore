@@ -41,3 +41,6 @@ out/
 
 ### Local dev H2 data ###
 data/
+
+### Local notes (not for the repo) ###
+NEON_COST_OPTIMIZATION.md
