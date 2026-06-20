@@ -35,6 +35,11 @@ object ChatToolDeclarations {
                 bulkDeleteTasks(),
                 bulkRescheduleTasks(),
                 setTaskLocation(),
+                createStagedTask(),
+                addStep(),
+                renameStep(),
+                setStepCompletion(),
+                deleteStep(),
             ),
         )
         .build()
@@ -510,6 +515,135 @@ object ChatToolDeclarations {
                     )
                     .putProperties("newDate", isoDateSchema("Target date YYYY-MM-DD."))
                     .addAllRequired(listOf("taskIds", "newDate"))
+                    .build(),
+            )
+            .build()
+
+    private fun createStagedTask(): FunctionDeclaration =
+        FunctionDeclaration.newBuilder()
+            .setName("createStagedTask")
+            .setDescription(
+                "Creates a STAGED personal task: a goal broken into an ordered list of steps " +
+                    "(e.g. 'Plan the trip' → book flight, pack, check passport). Use this when the " +
+                    "user describes a task with sub-steps / a checklist / phases. Always personal, " +
+                    "category PERSONAL, recurrence NONE. Requires at least one step. " +
+                    "timeStart defaults to 09:00 unless isAllDay=true.",
+            )
+            .setParameters(
+                Schema.newBuilder()
+                    .setType(Type.OBJECT)
+                    .putProperties("title", stringSchema("Title of the overall staged task."))
+                    .putProperties("date", isoDateSchema("Task date, ISO YYYY-MM-DD."))
+                    .putProperties(
+                        "steps",
+                        Schema.newBuilder()
+                            .setType(Type.ARRAY)
+                            .setItems(stringSchema("A single step title."))
+                            .setDescription(
+                                "Ordered list of step titles (at least one). Keep each step short.",
+                            )
+                            .build(),
+                    )
+                    .putProperties("description", stringSchema("Optional description for the overall task."))
+                    .putProperties(
+                        "isAllDay",
+                        Schema.newBuilder()
+                            .setType(Type.BOOLEAN)
+                            .setDescription(
+                                "True for an all-day staged task (omit timeStart/timeEnd). Defaults false.",
+                            )
+                            .build(),
+                    )
+                    .putProperties("timeStart", timeSchema("Start time HH:mm in 24h. Optional; defaults 09:00."))
+                    .putProperties("timeEnd", timeSchema("End time HH:mm in 24h. Optional."))
+                    .putProperties(
+                        "reminderOffsetMinutes",
+                        Schema.newBuilder()
+                            .setType(Type.INTEGER)
+                            .setDescription("Reminder offset in minutes before the task. 0 = none (default).")
+                            .build(),
+                    )
+                    .putProperties(
+                        "isSecret",
+                        Schema.newBuilder()
+                            .setType(Type.BOOLEAN)
+                            .setDescription("Mark task as secret (biometric-protected). Defaults to false.")
+                            .build(),
+                    )
+                    .addAllRequired(listOf("title", "date", "steps"))
+                    .build(),
+            )
+            .build()
+
+    private fun addStep(): FunctionDeclaration =
+        FunctionDeclaration.newBuilder()
+            .setName("addStep")
+            .setDescription(
+                "Adds a new step to an existing personal (staged) task, appended at the end. " +
+                    "Look up the task id via findTaskByTitle first if the user named it. " +
+                    "Group tasks return an error.",
+            )
+            .setParameters(
+                Schema.newBuilder()
+                    .setType(Type.OBJECT)
+                    .putProperties("taskId", longSchema("Numeric id of the parent task."))
+                    .putProperties("title", stringSchema("Title of the new step."))
+                    .addAllRequired(listOf("taskId", "title"))
+                    .build(),
+            )
+            .build()
+
+    private fun renameStep(): FunctionDeclaration =
+        FunctionDeclaration.newBuilder()
+            .setName("renameStep")
+            .setDescription(
+                "Renames a single step. Get the stepId from findTaskByTitle (each returned task " +
+                    "lists its steps with stepId). Group tasks return an error.",
+            )
+            .setParameters(
+                Schema.newBuilder()
+                    .setType(Type.OBJECT)
+                    .putProperties("stepId", longSchema("Numeric id of the step (from findTaskByTitle's steps)."))
+                    .putProperties("title", stringSchema("New title for the step."))
+                    .addAllRequired(listOf("stepId", "title"))
+                    .build(),
+            )
+            .build()
+
+    private fun setStepCompletion(): FunctionDeclaration =
+        FunctionDeclaration.newBuilder()
+            .setName("setStepCompletion")
+            .setDescription(
+                "Marks a single step complete or incomplete. The parent task auto-completes when " +
+                    "all its steps are done (and reopens otherwise). Get the stepId from " +
+                    "findTaskByTitle. Group tasks return an error.",
+            )
+            .setParameters(
+                Schema.newBuilder()
+                    .setType(Type.OBJECT)
+                    .putProperties("stepId", longSchema("Numeric id of the step (from findTaskByTitle's steps)."))
+                    .putProperties(
+                        "isCompleted",
+                        Schema.newBuilder().setType(Type.BOOLEAN).setDescription("true to complete the step.").build(),
+                    )
+                    .addAllRequired(listOf("stepId", "isCompleted"))
+                    .build(),
+            )
+            .build()
+
+    private fun deleteStep(): FunctionDeclaration =
+        FunctionDeclaration.newBuilder()
+            .setName("deleteStep")
+            .setDescription(
+                "Deletes a single step from a staged task. Cannot delete the last remaining step " +
+                    "(delete the whole task with deleteTask instead). Get the stepId from " +
+                    "findTaskByTitle. Group tasks return an error.",
+            )
+            .setParameters(
+                Schema.newBuilder()
+                    .setType(Type.OBJECT)
+                    .putProperties("stepId", longSchema("Numeric id of the step (from findTaskByTitle's steps)."))
+                    .addAllRequired(listOf("stepId"))
                     .build(),
             )
             .build()

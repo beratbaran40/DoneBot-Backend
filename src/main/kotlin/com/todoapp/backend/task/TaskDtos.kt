@@ -24,6 +24,22 @@ data class TaskRequest(
     val locationLng: Double? = null,
     @field:Size(max = 120) val locationName: String? = null,
     @field:Size(max = 500) val locationAddress: String? = null,
+    /**
+     * Ordered steps of a staged task. `null` = leave existing steps untouched (chat's
+     * updateTask and non-staged clients send null); a list = reconcile the step set
+     * (match by [SubtaskRequest.remoteId], insert new, delete missing). The client only
+     * sends a non-null list for tasks that actually have steps, so an empty list never
+     * accidentally wipes another device's steps.
+     */
+    val subtasks: List<SubtaskRequest>? = null,
+)
+
+data class SubtaskRequest(
+    /** Server id of an existing step, or null for a step created on the client. */
+    val remoteId: Long? = null,
+    @field:NotBlank @field:Size(max = 255) val title: String,
+    val isCompleted: Boolean = false,
+    val orderIndex: Int = 0,
 )
 
 data class TaskUserData(
@@ -54,6 +70,15 @@ data class TaskData(
     val locationName: String? = null,
     val locationAddress: String? = null,
     val photoUrls: List<String> = emptyList(),
+    /** Ordered steps of a staged task. Empty for a plain task. */
+    val subtasks: List<SubtaskData> = emptyList(),
+)
+
+data class SubtaskData(
+    val id: Long,
+    val title: String,
+    val isCompleted: Boolean,
+    val orderIndex: Int,
 )
 
 data class TaskDailyCompletionRequest(

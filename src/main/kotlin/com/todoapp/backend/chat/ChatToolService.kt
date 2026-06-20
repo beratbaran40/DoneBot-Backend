@@ -7,6 +7,8 @@ import com.todoapp.backend.group.GroupRepository
 import com.todoapp.backend.task.TaskCategory
 import com.todoapp.backend.task.TaskEntity
 import com.todoapp.backend.task.TaskRepository
+import com.todoapp.backend.task.TaskSubtaskEntity
+import com.todoapp.backend.task.TaskSubtaskRepository
 import com.todoapp.backend.task.Recurrence
 import org.slf4j.LoggerFactory
 import org.springframework.stereotype.Service
@@ -15,10 +17,10 @@ import java.time.LocalDate
 import java.time.LocalTime
 
 /**
- * Server-side execution of the 11 chat tools. Replaces the client's
- * `ChatToolRegistry`. All work runs against Postgres directly so we don't
- * need to round-trip the device for read tools, and write tools are atomic
- * within a single Spring transaction.
+ * Server-side execution of the chat tools (read, single/bulk task writes, and
+ * staged-task step writes). Replaces the client's `ChatToolRegistry`. All work runs
+ * against Postgres directly so we don't need to round-trip the device for read tools,
+ * and write tools are atomic within a single Spring transaction.
  *
  * Each `runX` method takes the parsed [Struct] args and returns a [Value]
  * that the orchestrator wraps into a `FunctionResponsePart` for Vertex.
@@ -28,6 +30,7 @@ class ChatToolService(
     private val taskRepo: TaskRepository,
     private val groupRepo: GroupRepository,
     private val members: GroupMemberRepository,
+    private val subtaskRepo: TaskSubtaskRepository,
 ) {
     private val log = LoggerFactory.getLogger(ChatToolService::class.java)
 
@@ -57,6 +60,11 @@ class ChatToolService(
                 "bulkDeleteTasks" -> runBulkDeleteTasks(userId, args)
                 "bulkRescheduleTasks" -> runBulkRescheduleTasks(userId, args)
                 "setTaskLocation" -> runSetTaskLocation(userId, args)
+                "createStagedTask" -> runCreateStagedTask(userId, args)
+                "addStep" -> runAddStep(userId, args)
+                "renameStep" -> runRenameStep(userId, args)
+                "setStepCompletion" -> runSetStepCompletion(userId, args)
+                "deleteStep" -> runDeleteStep(userId, args)
                 else -> errorPayload("Unknown tool: $name")
             }
         }.getOrElse {
@@ -121,7 +129,12 @@ class ChatToolService(
         }
         val tasks = taskRepo
             .findFirst5ByOwnerIdAndFamilyGroupIdIsNullAndTitleContainingIgnoreCaseOrderByDateAsc(userId, query)
-        return tasksPayload(tasks)
+        // Include steps (with their stepIds) so the model can chain into addStep / renameStep /
+        // setStepCompletion / deleteStep when the user references a staged task by name.
+        return objectValue(
+            "tasks" to listValue(tasks.map { taskValue(it, includeId = true, includeSteps = true) }),
+            "count" to longValue(tasks.size.toLong()),
+        )
     }
 
     private fun runGetProductivityInsights(userId: Long, args: Struct): Value {
@@ -398,11 +411,163 @@ class ChatToolService(
         }
         // Capture title for the model's confirmation reply (no id leak).
         val deletedTitle = task.title
+        // Steps are removed by the DB FK (ON DELETE CASCADE); deleting the task is enough.
         taskRepo.delete(task)
         return objectValue(
             "ok" to boolValue(true),
             "deletedTitle" to stringValue(deletedTitle),
         )
+    }
+
+    // -------------------- Staged-task (step) write tools --------------------
+
+    private fun runCreateStagedTask(userId: Long, args: Struct): Value {
+        val title = args.fields["title"]?.stringValue.orEmpty().ifBlank {
+            return errorPayload("title is required")
+        }
+        val date = LocalDate.parse(args.fields["date"]?.stringValue.orEmpty())
+        val steps = args.fields["steps"]?.listValue?.valuesList
+            ?.mapNotNull { it.stringValue?.trim()?.takeIf { s -> s.isNotBlank() }?.take(MAX_STEP_TITLE) }
+            ?: emptyList()
+        if (steps.isEmpty()) {
+            return errorPayload("steps is required: a staged task needs at least one step")
+        }
+        val isAllDay = args.fields["isAllDay"]?.boolValue ?: false
+        val start = if (isAllDay) {
+            0L
+        } else {
+            args.fields["timeStart"]?.stringValue?.takeIf { it.isNotBlank() }?.let(::parseTime)
+                ?: DEFAULT_STAGED_START_SECONDS
+        }
+        val end = if (isAllDay) {
+            SECONDS_PER_DAY - 1
+        } else {
+            args.fields["timeEnd"]?.stringValue?.takeIf { it.isNotBlank() }?.let(::parseTime)
+                ?: (start + DEFAULT_DURATION_SECONDS).coerceAtMost(SECONDS_PER_DAY - 1)
+        }
+        val description = args.fields["description"]?.stringValue?.takeIf { it.isNotBlank() }
+        val reminderOffsetMinutes = args.fields["reminderOffsetMinutes"]?.numberValue?.toLong()
+            ?.coerceAtLeast(0L) ?: 0L
+        val isSecret = args.fields["isSecret"]?.boolValue ?: false
+
+        val saved = taskRepo.save(
+            TaskEntity(
+                ownerId = userId,
+                title = title,
+                description = description,
+                date = date.toEpochDay(),
+                timeStart = start,
+                timeEnd = end,
+                isCompleted = false,
+                isSecret = isSecret,
+                category = TaskCategory.PERSONAL,
+                recurrence = Recurrence.NONE,
+                isAllDay = isAllDay,
+                reminderOffsetMinutes = reminderOffsetMinutes,
+            ),
+        )
+        steps.forEachIndexed { index, stepTitle ->
+            subtaskRepo.save(
+                TaskSubtaskEntity(taskId = saved.id, title = stepTitle, orderIndex = index),
+            )
+        }
+        return objectValue(
+            "ok" to boolValue(true),
+            "task" to taskValue(saved, includeId = false, includeSteps = true),
+        )
+    }
+
+    private fun runAddStep(userId: Long, args: Struct): Value {
+        val taskId = args.fields["taskId"]?.numberValue?.toLong()
+            ?: return errorPayload("taskId is required")
+        val title = args.fields["title"]?.stringValue?.trim()?.takeIf { it.isNotBlank() }?.take(MAX_STEP_TITLE)
+            ?: return errorPayload("title is required")
+        val task = taskRepo.findById(taskId).orElse(null)
+            ?: return errorPayload("task not found")
+        if (task.ownerId != userId) return errorPayload("not your task")
+        if (task.familyGroupId != null) {
+            return errorPayload("group_task_blocked: shared group tasks must be edited from the group screen, not chat")
+        }
+        val order = subtaskRepo.findAllByTaskIdOrderByOrderIndexAsc(task.id).size
+        subtaskRepo.save(TaskSubtaskEntity(taskId = task.id, title = title, orderIndex = order))
+        recomputeStagedParentCompletion(task)
+        return objectValue(
+            "ok" to boolValue(true),
+            "task" to taskValue(task, includeId = false, includeSteps = true),
+        )
+    }
+
+    private fun runRenameStep(userId: Long, args: Struct): Value {
+        val title = args.fields["title"]?.stringValue?.trim()?.takeIf { it.isNotBlank() }?.take(MAX_STEP_TITLE)
+            ?: return errorPayload("title is required")
+        val step = ownedStep(userId, args) ?: return stepLookupError(userId, args)
+        val task = taskRepo.findById(step.taskId).get()
+        step.title = title
+        subtaskRepo.save(step)
+        return objectValue(
+            "ok" to boolValue(true),
+            "task" to taskValue(task, includeId = false, includeSteps = true),
+        )
+    }
+
+    private fun runSetStepCompletion(userId: Long, args: Struct): Value {
+        val isCompleted = args.fields["isCompleted"]?.boolValue
+            ?: return errorPayload("isCompleted is required")
+        val step = ownedStep(userId, args) ?: return stepLookupError(userId, args)
+        val task = taskRepo.findById(step.taskId).get()
+        val noop = step.isCompleted == isCompleted
+        step.isCompleted = isCompleted
+        subtaskRepo.save(step)
+        recomputeStagedParentCompletion(task)
+        return objectValue(
+            "ok" to boolValue(true),
+            "noop" to boolValue(noop),
+            "task" to taskValue(task, includeId = false, includeSteps = true),
+        )
+    }
+
+    private fun runDeleteStep(userId: Long, args: Struct): Value {
+        val step = ownedStep(userId, args) ?: return stepLookupError(userId, args)
+        val task = taskRepo.findById(step.taskId).get()
+        if (subtaskRepo.findAllByTaskIdOrderByOrderIndexAsc(task.id).size <= 1) {
+            return errorPayload("cannot delete the last step — delete the whole task instead")
+        }
+        subtaskRepo.delete(step)
+        recomputeStagedParentCompletion(task)
+        return objectValue(
+            "ok" to boolValue(true),
+            "task" to taskValue(task, includeId = false, includeSteps = true),
+        )
+    }
+
+    /** Returns the step iff it exists and belongs to a personal task the caller owns, else null. */
+    private fun ownedStep(userId: Long, args: Struct): TaskSubtaskEntity? {
+        val stepId = args.fields["stepId"]?.numberValue?.toLong() ?: return null
+        val step = subtaskRepo.findById(stepId).orElse(null) ?: return null
+        val task = taskRepo.findById(step.taskId).orElse(null) ?: return null
+        if (task.ownerId != userId || task.familyGroupId != null) return null
+        return step
+    }
+
+    /** Specific error payload when [ownedStep] returned null, so the model can react correctly. */
+    private fun stepLookupError(userId: Long, args: Struct): Value {
+        val stepId = args.fields["stepId"]?.numberValue?.toLong() ?: return errorPayload("stepId is required")
+        val step = subtaskRepo.findById(stepId).orElse(null) ?: return errorPayload("step not found")
+        val task = taskRepo.findById(step.taskId).orElse(null) ?: return errorPayload("task not found")
+        if (task.familyGroupId != null) {
+            return errorPayload("group_task_blocked: shared group tasks must be edited from the group screen, not chat")
+        }
+        return errorPayload("not your task")
+    }
+
+    /** Parent is done iff it has steps and all are done; reopens otherwise (matches the client). */
+    private fun recomputeStagedParentCompletion(task: TaskEntity) {
+        val steps = subtaskRepo.findAllByTaskIdOrderByOrderIndexAsc(task.id)
+        val done = steps.isNotEmpty() && steps.all { it.isCompleted }
+        if (task.isCompleted != done) {
+            task.isCompleted = done
+            taskRepo.save(task)
+        }
     }
 
     private fun runSetTaskCompletion(userId: Long, args: Struct): Value {
@@ -417,6 +582,15 @@ class ChatToolService(
             return errorPayload("group_task_blocked: shared group tasks must be edited from the group screen, not chat")
         }
         val noop = task.isCompleted == isCompleted
+        // Staged task: completing the parent cascades to every step, and reopening clears them,
+        // mirroring the client's parent-checkbox shortcut so chat and app agree.
+        val steps = subtaskRepo.findAllByTaskIdOrderByOrderIndexAsc(task.id)
+        steps.forEach {
+            if (it.isCompleted != isCompleted) {
+                it.isCompleted = isCompleted
+                subtaskRepo.save(it)
+            }
+        }
         task.isCompleted = isCompleted
         return objectValue(
             "ok" to boolValue(true),
@@ -526,7 +700,7 @@ class ChatToolService(
      * `false`: the model already had the id as input or doesn't need one for confirmation,
      * and we want to keep ids out of the model's reply context as defense in depth.
      */
-    private fun taskValue(task: TaskEntity, includeId: Boolean = true): Value {
+    private fun taskValue(task: TaskEntity, includeId: Boolean = true, includeSteps: Boolean = false): Value {
         val struct = Struct.newBuilder()
         if (includeId) struct.putFields("id", longValue(task.id))
         struct.putFields("title", stringValue(task.title))
@@ -549,6 +723,23 @@ class ChatToolService(
         }
         if (task.locationAddress != null) {
             struct.putFields("locationAddress", stringValue(task.locationAddress!!))
+        }
+        if (includeSteps) {
+            val steps = subtaskRepo.findAllByTaskIdOrderByOrderIndexAsc(task.id)
+            if (steps.isNotEmpty()) {
+                struct.putFields(
+                    "steps",
+                    listValue(
+                        steps.map { step ->
+                            objectValue(
+                                "stepId" to longValue(step.id),
+                                "title" to stringValue(step.title),
+                                "isCompleted" to boolValue(step.isCompleted),
+                            )
+                        },
+                    ),
+                )
+            }
         }
         return Value.newBuilder().setStructValue(struct.build()).build()
     }
@@ -580,6 +771,8 @@ class ChatToolService(
 
     companion object {
         private const val DEFAULT_DURATION_SECONDS = 30L * 60L
+        private const val DEFAULT_STAGED_START_SECONDS = 9L * 3600L
+        private const val MAX_STEP_TITLE = 255
         private const val SECONDS_PER_DAY = 24L * 3600L
         private const val WEEK_LOOKBACK_DAYS = 6L
         private const val MONTH_LOOKBACK_DAYS = 29L

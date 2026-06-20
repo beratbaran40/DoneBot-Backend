@@ -15,6 +15,7 @@ class TaskService(
     private val photos: TaskPhotoRepository,
     private val publisher: NotificationPublisher,
     private val dailyCompletions: TaskDailyCompletionRepository,
+    private val subtaskRepo: TaskSubtaskRepository,
 ) {
     @Transactional
     fun create(ownerId: Long, req: TaskRequest): TaskData {
@@ -42,6 +43,7 @@ class TaskService(
             locationAddress = req.locationAddress?.takeIf { it.isNotBlank() },
         )
         val saved = tasks.save(entity)
+        req.subtasks?.let { reconcileSubtasks(saved.id, it) }
         notifyAssignmentIfNeeded(
             actorId = ownerId,
             previousAssigneeId = null,
@@ -85,12 +87,47 @@ class TaskService(
         entity.locationName = req.locationName?.takeIf { it.isNotBlank() }
         entity.locationAddress = req.locationAddress?.takeIf { it.isNotBlank() }
         val saved = tasks.save(entity)
+        req.subtasks?.let { reconcileSubtasks(saved.id, it) }
         notifyAssignmentIfNeeded(
             actorId = ownerId,
             previousAssigneeId = previousAssigneeId,
             saved = saved,
         )
         return saved.toData()
+    }
+
+    /**
+     * Replaces the task's step set with [incoming], preserving server ids where the
+     * client supplied a matching [SubtaskRequest.remoteId]. Steps absent from [incoming]
+     * are deleted; new ones (null remoteId) are inserted. orderIndex is re-packed to the
+     * incoming order so the steps render in the order the client sent them. Called only
+     * when the client sends a non-null `subtasks` list (see TaskRequest.subtasks).
+     */
+    private fun reconcileSubtasks(taskId: Long, incoming: List<SubtaskRequest>) {
+        val existing = subtaskRepo.findAllByTaskIdOrderByOrderIndexAsc(taskId)
+        val existingById = existing.associateBy { it.id }
+        val keptIds = mutableSetOf<Long>()
+        incoming.forEachIndexed { index, req ->
+            val match = req.remoteId?.let { existingById[it] }
+            if (match != null) {
+                match.title = req.title
+                match.isCompleted = req.isCompleted
+                match.orderIndex = index
+                subtaskRepo.save(match)
+                keptIds.add(match.id)
+            } else {
+                val created = subtaskRepo.save(
+                    TaskSubtaskEntity(
+                        taskId = taskId,
+                        title = req.title,
+                        isCompleted = req.isCompleted,
+                        orderIndex = index,
+                    ),
+                )
+                keptIds.add(created.id)
+            }
+        }
+        existing.filter { it.id !in keptIds }.forEach { subtaskRepo.delete(it) }
     }
 
     /**
@@ -188,6 +225,9 @@ class TaskService(
             locationName = locationName,
             locationAddress = locationAddress,
             photoUrls = urls,
+            subtasks = subtaskRepo.findAllByTaskIdOrderByOrderIndexAsc(id).map {
+                SubtaskData(id = it.id, title = it.title, isCompleted = it.isCompleted, orderIndex = it.orderIndex)
+            },
         )
     }
 
