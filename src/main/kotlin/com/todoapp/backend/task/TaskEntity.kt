@@ -88,6 +88,10 @@ class TaskEntity(
     @Column(name = "location_address", length = 500)
     var locationAddress: String? = null,
 
+    /** Epoch day a recurring routine was finished/retired from the client (null = active). */
+    @Column(name = "finished_on")
+    var finishedOn: Long? = null,
+
     @Column(nullable = false, updatable = false)
     var createdAt: Instant = Instant.now(),
 

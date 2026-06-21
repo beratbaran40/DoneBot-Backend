@@ -24,6 +24,7 @@ data class TaskRequest(
     val locationLng: Double? = null,
     @field:Size(max = 120) val locationName: String? = null,
     @field:Size(max = 500) val locationAddress: String? = null,
+    val finishedOn: Long? = null,
     /**
      * Ordered steps of a staged task. `null` = leave existing steps untouched (chat's
      * updateTask and non-staged clients send null); a list = reconcile the step set
@@ -69,6 +70,7 @@ data class TaskData(
     val locationLng: Double? = null,
     val locationName: String? = null,
     val locationAddress: String? = null,
+    val finishedOn: Long? = null,
     val photoUrls: List<String> = emptyList(),
     /** Ordered steps of a staged task. Empty for a plain task. */
     val subtasks: List<SubtaskData> = emptyList(),

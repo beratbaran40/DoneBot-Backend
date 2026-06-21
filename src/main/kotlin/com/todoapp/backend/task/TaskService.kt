@@ -41,6 +41,7 @@ class TaskService(
             locationLng = req.locationLng?.toBigDecimal(),
             locationName = req.locationName?.takeIf { it.isNotBlank() },
             locationAddress = req.locationAddress?.takeIf { it.isNotBlank() },
+            finishedOn = req.finishedOn,
         )
         val saved = tasks.save(entity)
         req.subtasks?.let { reconcileSubtasks(saved.id, it) }
@@ -86,6 +87,7 @@ class TaskService(
         entity.locationLng = req.locationLng?.toBigDecimal()
         entity.locationName = req.locationName?.takeIf { it.isNotBlank() }
         entity.locationAddress = req.locationAddress?.takeIf { it.isNotBlank() }
+        entity.finishedOn = req.finishedOn
         val saved = tasks.save(entity)
         req.subtasks?.let { reconcileSubtasks(saved.id, it) }
         notifyAssignmentIfNeeded(
@@ -224,6 +226,7 @@ class TaskService(
             locationLng = locationLng?.toDouble(),
             locationName = locationName,
             locationAddress = locationAddress,
+            finishedOn = finishedOn,
             photoUrls = urls,
             subtasks = subtaskRepo.findAllByTaskIdOrderByOrderIndexAsc(id).map {
                 SubtaskData(id = it.id, title = it.title, isCompleted = it.isCompleted, orderIndex = it.orderIndex)
