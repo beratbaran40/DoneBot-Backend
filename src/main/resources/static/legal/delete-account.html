@@ -1,0 +1,501 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>DoneBot — Delete Your Account &amp; Data / Hesap ve Veri Silme</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --bg: #F8F9FC;
+            --fg: #090E23;
+            --muted: #717171;
+            --primary: #4566EC;
+            --accent: #1C3082;
+            --soft-pink: #F5D3BB;
+            --card: #EDF4FF;
+            --card-border: #A9BAFF;
+            --surface: #FFFAF0;
+            --shadow: 0 4px 14px rgba(69, 102, 236, 0.10);
+            --shadow-soft: 0 2px 8px rgba(69, 102, 236, 0.06);
+            --radius-card: 16px;
+            --radius-pill: 999px;
+        }
+        @media (prefers-color-scheme: dark) {
+            :root {
+                --bg: #0F1116;
+                --fg: #ECECEC;
+                --muted: #9CA3AF;
+                --primary: #A9BAFF;
+                --accent: #C7D0FF;
+                --soft-pink: #3D2820;
+                --card: #1A1D24;
+                --card-border: #3D6A9E;
+                --surface: #16171B;
+                --shadow: 0 4px 14px rgba(0, 0, 0, 0.45);
+                --shadow-soft: 0 2px 8px rgba(0, 0, 0, 0.30);
+            }
+        }
+        * { box-sizing: border-box; }
+        body {
+            font-family: "Poppins", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+            max-width: 720px;
+            margin: 0 auto;
+            padding: 24px;
+            color: var(--fg);
+            background: var(--bg);
+            line-height: 1.65;
+            font-weight: 400;
+        }
+
+        /* Header card with DoneBot avatar (mirrors in-app top bar) */
+        .header-card {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            background: var(--surface);
+            border-radius: var(--radius-card);
+            padding: 12px 16px;
+            margin-bottom: 16px;
+            box-shadow: var(--shadow-soft);
+        }
+        .header-avatar {
+            width: 44px;
+            height: 44px;
+            border-radius: 50%;
+            background: var(--card);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            overflow: hidden;
+            flex-shrink: 0;
+        }
+        .header-avatar img {
+            width: 40px;
+            height: 40px;
+            border-radius: 50%;
+            object-fit: cover;
+        }
+        .header-text { display: flex; flex-direction: column; gap: 2px; }
+        .header-title {
+            font-weight: 600;
+            font-size: 16px;
+            color: var(--fg);
+            letter-spacing: 0.1px;
+        }
+        .header-sub {
+            font-size: 12px;
+            color: var(--muted);
+        }
+
+        /* Language toggle */
+        .lang-bar {
+            position: sticky;
+            top: 12px;
+            display: flex;
+            justify-content: flex-end;
+            margin-bottom: 16px;
+            z-index: 10;
+        }
+        .lang-pill {
+            display: inline-flex;
+            background: var(--surface);
+            border: 1px solid var(--card-border);
+            border-radius: var(--radius-pill);
+            padding: 4px;
+            box-shadow: var(--shadow-soft);
+        }
+        .lang-pill button {
+            font: inherit;
+            font-size: 13px;
+            font-weight: 500;
+            padding: 6px 16px;
+            border-radius: var(--radius-pill);
+            border: 0;
+            background: transparent;
+            color: var(--muted);
+            cursor: pointer;
+            transition: background 150ms, color 150ms;
+        }
+        .lang-pill button[aria-pressed="true"] {
+            background: var(--primary);
+            color: #fff;
+            font-weight: 600;
+        }
+        .lang-pill button:hover:not([aria-pressed="true"]) {
+            color: var(--fg);
+        }
+
+        /* Page title */
+        h1 {
+            color: var(--accent);
+            font-weight: 600;
+            font-size: 26px;
+            line-height: 1.3;
+            margin: 24px 0 8px;
+        }
+        .updated {
+            color: var(--muted);
+            font-size: 13px;
+            margin-bottom: 24px;
+        }
+
+        /* Section cards (each H2 + content gets its own card) */
+        section[data-lang] > h2 + p,
+        section[data-lang] > h2 + ul,
+        section[data-lang] > h2 + p + p,
+        section[data-lang] > h2 + p + ul {
+            /* targeted via .card-group below for cross-browser predictability */
+        }
+        .card-group {
+            background: var(--card);
+            border: 1px solid var(--card-border);
+            border-radius: var(--radius-card);
+            padding: 18px 20px;
+            margin: 16px 0;
+            box-shadow: var(--shadow);
+        }
+        h2 {
+            color: var(--accent);
+            font-weight: 600;
+            font-size: 17px;
+            margin: 0 0 8px;
+        }
+        p, li {
+            color: var(--fg);
+            font-size: 14px;
+            margin: 6px 0;
+        }
+        ul { padding-left: 20px; margin: 8px 0; }
+        strong { font-weight: 600; color: var(--accent); }
+
+        a {
+            color: var(--primary);
+            text-decoration: none;
+            border-bottom: 1px dotted var(--primary);
+            transition: color 150ms, border-bottom-color 150ms;
+        }
+        a:hover {
+            color: var(--accent);
+            border-bottom-color: var(--accent);
+        }
+
+        em { font-style: normal; color: var(--accent); font-weight: 500; }
+
+        /* Language sections */
+        [data-lang] { display: none; }
+        [data-lang].active { display: block; }
+
+        /* Footer — creator card */
+        .footer {
+            margin-top: 40px;
+            padding-top: 24px;
+            border-top: 1px solid var(--card-border);
+        }
+        .creator-card {
+            display: flex;
+            align-items: center;
+            gap: 14px;
+            padding: 14px 16px;
+            background: var(--surface);
+            border: 1px solid var(--card-border);
+            border-radius: var(--radius-card);
+            box-shadow: var(--shadow-soft);
+        }
+        .creator-avatar {
+            position: relative;
+            width: 56px;
+            height: 56px;
+            border-radius: 50%;
+            background: var(--card);
+            overflow: hidden;
+            flex-shrink: 0;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            border: 2px solid var(--primary);
+        }
+        .creator-avatar img {
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+        }
+        .creator-avatar .initials-label {
+            position: absolute;
+            inset: 0;
+            display: none;
+            align-items: center;
+            justify-content: center;
+            font-weight: 600;
+            font-size: 20px;
+            color: var(--primary);
+            letter-spacing: 0.5px;
+        }
+        .creator-avatar.no-photo img { display: none; }
+        .creator-avatar.no-photo .initials-label { display: flex; }
+        .creator-info {
+            flex: 1;
+            min-width: 0;
+            display: flex;
+            flex-direction: column;
+            gap: 2px;
+        }
+        .creator-name {
+            font-weight: 600;
+            font-size: 15px;
+            color: var(--fg);
+            line-height: 1.2;
+        }
+        .creator-role {
+            font-size: 12px;
+            color: var(--muted);
+            line-height: 1.3;
+        }
+        .creator-icons {
+            display: flex;
+            gap: 6px;
+            margin-top: 6px;
+        }
+        .creator-icons a {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            width: 28px;
+            height: 28px;
+            border-radius: 50%;
+            background: var(--card);
+            color: var(--muted);
+            border: 1px solid transparent;
+            transition: color 120ms, border-color 120ms, transform 120ms;
+        }
+        .creator-icons a:hover {
+            color: var(--primary);
+            border-color: var(--primary);
+            transform: scale(1.1);
+        }
+        .creator-icons svg {
+            width: 14px;
+            height: 14px;
+            fill: currentColor;
+        }
+        .footer-meta-line {
+            margin-top: 14px;
+            text-align: center;
+            color: var(--muted);
+            font-size: 11px;
+            letter-spacing: 0.3px;
+        }
+        .footer-meta-line .dot {
+            margin: 0 6px;
+            opacity: 0.5;
+        }
+
+        /* Mobile-first */
+        @media (max-width: 480px) {
+            body { padding: 16px; }
+            h1 { font-size: 22px; }
+            .card-group { padding: 14px 16px; }
+        }
+    </style>
+</head>
+<body>
+
+<div class="header-card">
+    <div class="header-avatar">
+        <img src="/legal/donebot-avatar.png" alt="DoneBot" onerror="this.style.display='none'">
+    </div>
+    <div class="header-text">
+        <span class="header-title">DoneBot</span>
+        <span class="header-sub" data-lang-text-en="Productivity assistant" data-lang-text-tr="Verimlilik asistanı">Productivity assistant</span>
+    </div>
+</div>
+
+<div class="lang-bar">
+    <div class="lang-pill" role="tablist" aria-label="Language">
+        <button type="button" data-set="en" aria-pressed="true">English</button>
+        <button type="button" data-set="tr" aria-pressed="false">Türkçe</button>
+    </div>
+</div>
+
+<!-- ======================== ENGLISH ======================== -->
+<section data-lang="en" class="active">
+    <h1>Delete Your Account &amp; Data</h1>
+    <p class="updated">Last updated: 2026-06-22</p>
+
+    <p>This page explains how to delete your DoneBot account and the personal data associated with it. You can do this yourself inside the app, or request it from us by email &mdash; including if you can no longer sign in or have already removed the app.</p>
+
+    <div class="card-group">
+        <h2>1. Delete from inside the app (fastest)</h2>
+        <p>Open DoneBot and go to <em>Settings &rarr; Account &rarr; Delete Account</em>, then confirm. Your account and personal data are removed as part of that operation &mdash; no further request is needed.</p>
+    </div>
+
+    <div class="card-group">
+        <h2>2. Request deletion by email</h2>
+        <p>If you cannot sign in, have uninstalled the app, or simply prefer email, send a request to <a href="mailto:support@donebot.app?subject=Delete%20my%20account">support@donebot.app</a> from the email address registered to your account, with the subject <strong>&ldquo;Delete my account&rdquo;</strong>. We use the sending address to verify ownership and complete the deletion within <strong>30 days</strong>.</p>
+    </div>
+
+    <div class="card-group">
+        <h2>3. What is deleted</h2>
+        <ul>
+            <li>Your profile: email, display name, and avatar.</li>
+            <li>All your personal tasks, their steps, reminders, and completion history.</li>
+            <li>Your DoneBot chat history (on your device and on our backend).</li>
+            <li>Your group memberships and device / push notification tokens.</li>
+            <li>Refresh tokens and active sessions are revoked.</li>
+        </ul>
+    </div>
+
+    <div class="card-group">
+        <h2>4. Groups you own</h2>
+        <p>A group you own is transferred to another member (the admin role passes to a remaining member, with admins preferred) or, if you were the only member, deleted entirely.</p>
+    </div>
+
+    <div class="card-group">
+        <h2>5. Data we keep, and for how long</h2>
+        <ul>
+            <li>Encrypted backups may retain residual data for up to <strong>30 days</strong> for disaster recovery, after which it is purged.</li>
+            <li>We may retain a minimal record (for example, a deletion-request log) only where required to comply with a legal obligation.</li>
+        </ul>
+    </div>
+
+    <div class="card-group">
+        <h2>6. Contact</h2>
+        <p>Questions about deletion? Reach us at <a href="mailto:support@donebot.app">support@donebot.app</a>.</p>
+    </div>
+</section>
+
+<!-- ======================== TÜRKÇE ======================== -->
+<section data-lang="tr">
+    <h1>Hesabınızı ve Verilerinizi Silme</h1>
+    <p class="updated">Son güncelleme: 22.06.2026</p>
+
+    <p>Bu sayfa, DoneBot hesabınızı ve onunla ilişkili kişisel verileri nasıl sileceğinizi açıklar. Bunu uygulama içinden kendiniz yapabilir ya da bizden e-posta ile talep edebilirsiniz &mdash; artık giriş yapamıyor veya uygulamayı kaldırmış olsanız bile.</p>
+
+    <div class="card-group">
+        <h2>1. Uygulama içinden silme (en hızlısı)</h2>
+        <p>DoneBot&rsquo;u açın ve <em>Ayarlar &rarr; Hesap &rarr; Hesabı Sil</em> yolunu izleyip onaylayın. Hesabınız ve kişisel verileriniz aynı işlemde silinir &mdash; başka bir talebe gerek yoktur.</p>
+    </div>
+
+    <div class="card-group">
+        <h2>2. E-posta ile silme talebi</h2>
+        <p>Giriş yapamıyorsanız, uygulamayı kaldırdıysanız ya da e-postayı tercih ediyorsanız, hesabınıza kayıtlı e-posta adresinden <a href="mailto:support@donebot.app?subject=Hesab%C4%B1m%C4%B1%20sil">support@donebot.app</a> adresine <strong>&ldquo;Hesabımı sil&rdquo;</strong> konulu bir talep gönderin. Gönderen adresi sahipliği doğrulamak için kullanır ve silme işlemini <strong>30 gün</strong> içinde tamamlarız.</p>
+    </div>
+
+    <div class="card-group">
+        <h2>3. Neler silinir</h2>
+        <ul>
+            <li>Profiliniz: e-posta, görünen ad ve avatar.</li>
+            <li>Tüm kişisel görevleriniz; adımları, hatırlatmaları ve tamamlanma geçmişi.</li>
+            <li>DoneBot sohbet geçmişiniz (cihazınızda ve sunucumuzda).</li>
+            <li>Grup üyelikleriniz ve cihaz / bildirim tokenlarınız.</li>
+            <li>Yenileme tokenları ve aktif oturumlar iptal edilir.</li>
+        </ul>
+    </div>
+
+    <div class="card-group">
+        <h2>4. Sahibi olduğunuz gruplar</h2>
+        <p>Sahibi olduğunuz bir grup başka bir üyeye devredilir (yöneticilik rolü kalan bir üyeye geçer, mevcut yöneticiler tercih edilir) ya da grupta tek üye sizseniz tamamen silinir.</p>
+    </div>
+
+    <div class="card-group">
+        <h2>5. Sakladığımız veriler ve süresi</h2>
+        <ul>
+            <li>Şifreli yedekler, felaket kurtarma için kalan verileri en fazla <strong>30 gün</strong> saklayabilir; sonrasında temizlenir.</li>
+            <li>Yalnızca yasal bir yükümlülüğü yerine getirmek için gerekli olduğunda asgari bir kayıt (örneğin bir silme-talebi günlüğü) tutabiliriz.</li>
+        </ul>
+    </div>
+
+    <div class="card-group">
+        <h2>6. İletişim</h2>
+        <p>Silme hakkında sorularınız için <a href="mailto:support@donebot.app">support@donebot.app</a> adresinden bize ulaşın.</p>
+    </div>
+</section>
+
+<footer class="footer">
+    <div class="creator-card">
+        <div class="creator-avatar no-photo" id="creatorAvatar">
+            <img src="/legal/berat-avatar.jpg" alt="Berat Baran"
+                 onload="this.parentElement.classList.remove('no-photo')"
+                 onerror="this.style.display='none'">
+            <span class="initials-label">BB</span>
+        </div>
+        <div class="creator-info">
+            <div class="creator-name">Berat Baran</div>
+            <div class="creator-role"
+                 data-lang-text-en="Android Developer · İstanbul"
+                 data-lang-text-tr="Android Developer · İstanbul">Android Developer · İstanbul</div>
+            <div class="creator-icons" aria-label="Berat Baran links">
+                <a href="https://www.linkedin.com/in/berat-baran-038963218/" target="_blank" rel="noopener noreferrer" aria-label="LinkedIn">
+                    <svg viewBox="0 0 24 24" role="img" aria-hidden="true">
+                        <path d="M20.447 20.452h-3.554v-5.569c0-1.328-.027-3.037-1.852-3.037-1.853 0-2.136 1.445-2.136 2.939v5.667H9.351V9h3.414v1.561h.046c.477-.9 1.637-1.85 3.37-1.85 3.601 0 4.267 2.37 4.267 5.455v6.286zM5.337 7.433a2.062 2.062 0 01-2.063-2.065 2.063 2.063 0 112.063 2.065zm1.782 13.019H3.555V9h3.564v11.452zM22.225 0H1.771C.792 0 0 .774 0 1.729v20.542C0 23.227.792 24 1.771 24h20.451C23.2 24 24 23.227 24 22.271V1.729C24 .774 23.2 0 22.222 0h.003z"/>
+                    </svg>
+                </a>
+                <a href="https://github.com/beratbaran40" target="_blank" rel="noopener noreferrer" aria-label="GitHub">
+                    <svg viewBox="0 0 24 24" role="img" aria-hidden="true">
+                        <path d="M12 .297c-6.63 0-12 5.373-12 12 0 5.303 3.438 9.8 8.205 11.385.6.113.82-.258.82-.577 0-.285-.01-1.04-.015-2.04-3.338.724-4.042-1.61-4.042-1.61C4.422 18.07 3.633 17.7 3.633 17.7c-1.087-.744.084-.729.084-.729 1.205.084 1.838 1.236 1.838 1.236 1.07 1.835 2.809 1.305 3.495.998.108-.776.417-1.305.76-1.605-2.665-.3-5.466-1.332-5.466-5.93 0-1.31.465-2.38 1.235-3.22-.135-.303-.54-1.523.105-3.176 0 0 1.005-.322 3.3 1.23.96-.267 1.98-.4 3-.405 1.02.005 2.04.138 3 .405 2.28-1.552 3.285-1.23 3.285-1.23.645 1.653.24 2.873.12 3.176.765.84 1.23 1.91 1.23 3.22 0 4.61-2.805 5.625-5.475 5.92.42.36.81 1.096.81 2.22 0 1.606-.015 2.896-.015 3.286 0 .315.21.69.825.57C20.565 22.092 24 17.592 24 12.297c0-6.627-5.373-12-12-12"/>
+                    </svg>
+                </a>
+                <a href="mailto:support@donebot.app" aria-label="Email">
+                    <svg viewBox="0 0 24 24" role="img" aria-hidden="true">
+                        <path d="M22 6c0-1.1-.9-2-2-2H4c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V6zm-2 0l-8 5-8-5h16zm0 12H4V8l8 5 8-5v10z"/>
+                    </svg>
+                </a>
+            </div>
+        </div>
+    </div>
+    <div class="footer-meta-line">
+        <span data-lang-text-en="Made with care, 2026"
+              data-lang-text-tr="İtinayla yapıldı, 2026">Made with care, 2026</span>
+        <span class="dot">·</span>
+        © 2026 DoneBot
+        <span class="dot">·</span>
+        v1.0
+    </div>
+</footer>
+
+<script>
+    (function() {
+        var STORAGE_KEY = 'donebot_legal_lang';
+        var sections = document.querySelectorAll('[data-lang]');
+        var buttons = document.querySelectorAll('.lang-pill button[data-set]');
+        var langTextNodes = document.querySelectorAll('[data-lang-text-en]');
+
+        function pickInitialLang() {
+            var stored = null;
+            try { stored = localStorage.getItem(STORAGE_KEY); } catch (e) { /* private mode */ }
+            if (stored === 'en' || stored === 'tr') return stored;
+            var nav = (navigator.language || navigator.userLanguage || 'en').toLowerCase();
+            return nav.indexOf('tr') === 0 ? 'tr' : 'en';
+        }
+
+        function setLang(lang) {
+            sections.forEach(function(s) {
+                s.classList.toggle('active', s.getAttribute('data-lang') === lang);
+            });
+            buttons.forEach(function(b) {
+                b.setAttribute('aria-pressed', b.getAttribute('data-set') === lang ? 'true' : 'false');
+            });
+            langTextNodes.forEach(function(node) {
+                var attr = 'data-lang-text-' + lang;
+                if (node.hasAttribute(attr)) {
+                    node.textContent = node.getAttribute(attr);
+                }
+            });
+            document.documentElement.setAttribute('lang', lang);
+            try { localStorage.setItem(STORAGE_KEY, lang); } catch (e) { /* private mode */ }
+        }
+
+        buttons.forEach(function(b) {
+            b.addEventListener('click', function() {
+                setLang(b.getAttribute('data-set'));
+            });
+        });
+
+        setLang(pickInitialLang());
+    })();
+</script>
+
+</body>
+</html>
