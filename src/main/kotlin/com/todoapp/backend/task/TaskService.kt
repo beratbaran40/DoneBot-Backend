@@ -1,5 +1,6 @@
 package com.todoapp.backend.task
 
+import com.todoapp.backend.group.GroupMemberRepository
 import com.todoapp.backend.notif.NotificationPublisher
 import com.todoapp.backend.notif.inbox.NotificationType
 import com.todoapp.backend.user.UserRepository
@@ -16,10 +17,13 @@ class TaskService(
     private val publisher: NotificationPublisher,
     private val dailyCompletions: TaskDailyCompletionRepository,
     private val subtaskRepo: TaskSubtaskRepository,
+    private val members: GroupMemberRepository,
 ) {
     @Transactional
     fun create(ownerId: Long, req: TaskRequest): TaskData {
         val category = req.category ?: TaskCategory.PERSONAL
+        // AUTH: bir gruba görev ekleyebilmek için o grubun üyesi olmalısın (yazma tarafı IDOR — §4.8 denetimi).
+        req.familyGroupId?.let { requireGroupMembership(ownerId, it) }
         val entity = TaskEntity(
             ownerId = ownerId,
             title = req.title,
@@ -181,10 +185,23 @@ class TaskService(
         val list = if (familyGroupId == null) {
             tasks.findAllByOwnerIdAndFamilyGroupIdIsNull(ownerId)
         } else {
+            requireGroupMembership(ownerId, familyGroupId)
             tasks.findAllByFamilyGroupId(familyGroupId)
         }
         val items = list.map { it.toData() }
         return TaskListData(items, items.size)
+    }
+
+    /**
+     * Authorization gate for group-scoped task access: the caller must belong to the group.
+     * Mirrors TaskPhotoController.requireAccessibleTask. Group owners are members too
+     * (GroupService.create adds the creator to group_members), so this also admits the owner.
+     * Without it, GET /tasks?familyGroupId=N leaked ANY group's tasks incl. isSecret (IDOR, §4.8).
+     */
+    private fun requireGroupMembership(callerId: Long, familyGroupId: Long) {
+        if (members.findByGroupIdAndUserId(familyGroupId, callerId) == null) {
+            throw ResponseStatusException(HttpStatus.FORBIDDEN, "Not a group member")
+        }
     }
 
     @Transactional
