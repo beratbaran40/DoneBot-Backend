@@ -98,7 +98,8 @@ class GroupTaskService(
         // - Self-assign (assigneeId == callerId on an unassigned task): allowed.
         // - Toggling isCompleted: admin OR the current assignee.
         val editingFields = req.title != null || req.description != null ||
-            req.dueDate != null || req.priority != null
+            req.dueDate != null || req.priority != null ||
+            req.isAllDay != null || req.timeStart != null || req.timeEnd != null
         if (editingFields && !isAdmin) {
             throw ResponseStatusException(HttpStatus.FORBIDDEN, "Only admins can edit tasks")
         }
@@ -120,6 +121,10 @@ class GroupTaskService(
             val (d, t) = splitDueDate(it)
             task.date = d; task.timeStart = t; task.timeEnd = t
         }
+        // Applied after dueDate so an explicit start/end overrides the single timestamp it derives.
+        req.isAllDay?.let { task.isAllDay = it }
+        req.timeStart?.let { task.timeStart = it }
+        req.timeEnd?.let { task.timeEnd = it }
         req.isCompleted?.let { task.isCompleted = it }
         req.priority?.let { task.priority = it }
         when {
@@ -186,7 +191,7 @@ class GroupTaskService(
                     ),
                 )
             }
-        } else if (req.title != null || req.description != null || req.dueDate != null || req.priority != null) {
+        } else if (editingFields) {
             activity.log(groupId, callerId, GroupActivityType.TASK_UPDATED,
                 description = "Updated “${saved.title}”", taskId = saved.id, taskTitle = saved.title)
         }

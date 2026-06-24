@@ -86,6 +86,12 @@ data class GroupTaskUpdateRequest(
     val title: String? = null,
     val description: String? = null,
     val dueDate: Long? = null,
+    /** Whole-day flag; null = no change. When set, [timeStart]/[timeEnd] are still honoured if sent. */
+    val isAllDay: Boolean? = null,
+    /** Seconds since midnight; null = no change. */
+    val timeStart: Long? = null,
+    /** Seconds since midnight; null = no change. */
+    val timeEnd: Long? = null,
     val isCompleted: Boolean? = null,
     val priority: String? = null,
     val assigneeId: Long? = null,
