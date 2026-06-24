@@ -17,7 +17,7 @@ import java.time.Duration
 import java.time.Instant
 import java.util.Base64
 
-class AuthException(msg: String) : RuntimeException(msg)
+class AuthException(msg: String, val errorCode: String? = null) : RuntimeException(msg)
 
 @Service
 class AuthService(
@@ -51,10 +51,21 @@ class AuthService(
     @Transactional
     fun login(req: LoginRequest): AuthResponseData {
         val creds = users.findCredentialsByEmail(req.email) ?: throw AuthException("Invalid credentials")
-        val hash = creds.passwordHash ?: throw AuthException("Invalid credentials")
+        val hash = creds.passwordHash ?: throw AuthException(
+            "This account uses social sign-in. Please continue with your social provider.",
+            errorCode = oauthAccountErrorCode(creds.providersCsv),
+        )
         if (!passwordEncoder.matches(req.password, hash)) throw AuthException("Invalid credentials")
         val summary = users.findSummaryById(creds.id) ?: throw AuthException("User not found")
         return issueTokenPair(summary)
+    }
+
+    /** Builds a stable client-facing code naming the provider, e.g. "oauth_account_google". */
+    private fun oauthAccountErrorCode(providersCsv: String): String {
+        val provider = providersCsv.split(",")
+            .map { it.trim() }
+            .firstOrNull { it.isNotBlank() && it != "email" }
+        return if (provider != null) "oauth_account_$provider" else "oauth_account"
     }
 
     @Transactional
@@ -113,8 +124,15 @@ class AuthService(
             return
         }
         if (creds.passwordHash == null) {
-            // Social-only account — no password to reset. Still succeed silently.
+            // Social-only account — no password to reset. Send a helpful notice to the (real)
+            // inbox owner instead of silently doing nothing; the API response stays a generic
+            // 200 so the requester learns nothing (no account enumeration).
             log.info("forgotPassword: user {} has no password (oauth-only)", creds.id)
+            try {
+                mailService.sendOAuthAccountNotice(creds.email, creds.displayName, creds.providersCsv)
+            } catch (ex: Exception) {
+                log.error("Failed to send oauth-account notice to {}", creds.email, ex)
+            }
             return
         }
         // Invalidate previous unused tokens for this user.

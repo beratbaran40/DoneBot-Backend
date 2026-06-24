@@ -47,7 +47,15 @@ class AuthController(private val authService: AuthService) {
     }
 
     @ExceptionHandler(AuthException::class)
-    fun handleAuth(ex: AuthException): ResponseEntity<BaseResponse<Nothing>> =
-        ResponseEntity.status(HttpStatus.UNAUTHORIZED)
-            .body(BaseResponse.error(401, ex.message ?: "Unauthorized"))
+    fun handleAuth(ex: AuthException): ResponseEntity<BaseResponse<Nothing>> {
+        // "This email uses Google/Facebook" is a conflict, not bad credentials — return 409 so
+        // the client's 401 handling (which discards the body) doesn't swallow the errorCode.
+        val status = if (ex.errorCode?.startsWith("oauth_account") == true) {
+            HttpStatus.CONFLICT
+        } else {
+            HttpStatus.UNAUTHORIZED
+        }
+        return ResponseEntity.status(status)
+            .body(BaseResponse.error(status.value(), ex.message ?: "Unauthorized", ex.errorCode))
+    }
 }

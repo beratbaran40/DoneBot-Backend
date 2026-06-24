@@ -34,6 +34,49 @@ class MailService(
         mailSender.send(message)
     }
 
+    /**
+     * Sent when someone requests a password reset for a social-only (OAuth) account. There is no
+     * password to reset, so we guide the real inbox owner to their sign-in provider instead.
+     */
+    fun sendOAuthAccountNotice(toEmail: String, displayName: String, providersCsv: String) {
+        if (host.isBlank()) {
+            log.warn("[MAIL:DEV] oauth-account notice for {} (providers={})", toEmail, providersCsv)
+            return
+        }
+        val provider = providerLabel(providersCsv)
+        val message = mailSender.createMimeMessage()
+        val helper = MimeMessageHelper(message, true, "UTF-8")
+        helper.setFrom(from, fromName)
+        helper.setTo(toEmail)
+        helper.setSubject("About your DoneBot password reset request")
+        helper.setText(buildOAuthNoticeHtml(displayName, provider), true)
+        mailSender.send(message)
+    }
+
+    private fun providerLabel(providersCsv: String): String {
+        val provider = providersCsv.split(",")
+            .map { it.trim() }
+            .firstOrNull { it.isNotBlank() && it != "email" }
+            ?.lowercase()
+        return when (provider) {
+            "google" -> "Google"
+            "facebook" -> "Facebook"
+            else -> "a social account"
+        }
+    }
+
+    private fun buildOAuthNoticeHtml(displayName: String, provider: String): String = """
+        <!doctype html>
+        <html><body style="font-family: -apple-system, Segoe UI, Roboto, sans-serif; padding: 24px; color: #090E23;">
+        <h2 style="color:#4566EC;">Use $provider to sign in</h2>
+        <p>Hi $displayName,</p>
+        <p>We received a request to reset the password for your DoneBot account. Your account signs in
+        with <strong>$provider</strong>, so there is no password to reset.</p>
+        <p>Just open DoneBot and tap <strong>Continue with $provider</strong> on the sign-in screen.</p>
+        <p style="color:#7A9CC6;font-size:12px;">If you didn't request this, you can safely ignore this email.</p>
+        </body></html>
+    """.trimIndent()
+
     private fun buildHtml(displayName: String, resetLink: String): String = """
         <!doctype html>
         <html><body style="font-family: -apple-system, Segoe UI, Roboto, sans-serif; padding: 24px; color: #090E23;">

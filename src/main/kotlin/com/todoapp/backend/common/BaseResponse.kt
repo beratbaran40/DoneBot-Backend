@@ -4,6 +4,9 @@ data class BaseResponse<T>(
     val code: Int,
     val message: String,
     val data: T?,
+    // Stable, machine-readable error identifier for cases the client must branch on
+    // (e.g. "oauth_account_google"). Null on success and on plain errors.
+    val errorCode: String? = null,
 ) {
     companion object {
         fun <T> ok(data: T, message: String = "Operation completed successfully"): BaseResponse<T> =
@@ -12,7 +15,7 @@ data class BaseResponse<T>(
         fun ok(message: String = "Operation completed successfully"): BaseResponse<Unit> =
             BaseResponse(code = 200, message = message, data = Unit)
 
-        fun <T> error(code: Int, message: String): BaseResponse<T> =
-            BaseResponse(code = code, message = message, data = null)
+        fun <T> error(code: Int, message: String, errorCode: String? = null): BaseResponse<T> =
+            BaseResponse(code = code, message = message, data = null, errorCode = errorCode)
     }
 }
