@@ -8,6 +8,7 @@ import org.springframework.web.bind.MethodArgumentNotValidException
 import org.springframework.web.bind.annotation.ExceptionHandler
 import org.springframework.web.bind.annotation.RestControllerAdvice
 import org.springframework.web.server.ResponseStatusException
+import org.springframework.web.servlet.resource.NoResourceFoundException
 
 /**
  * Single funnel for every exception thrown from a controller, so the API always answers in the
@@ -17,7 +18,8 @@ import org.springframework.web.server.ResponseStatusException
  *
  * Note: the catch-all [handleGeneric] would otherwise also swallow [ResponseStatusException]
  * (chat 429/502, group 404, the auth rate-limit 429) and flatten it to 500 — [handleStatus]
- * intercepts those first to preserve the intended status + reason.
+ * intercepts those first to preserve the intended status + reason. Likewise [handleNoResource]
+ * keeps an unmatched-path 404 (e.g. /v3/api-docs once Swagger is off) from becoming a 500.
  */
 @RestControllerAdvice
 class GlobalExceptionHandler {
@@ -50,6 +52,13 @@ class GlobalExceptionHandler {
         val message = ex.reason ?: HttpStatus.resolve(status)?.reasonPhrase ?: "Error"
         return ResponseEntity.status(status).body(BaseResponse.error(status, message))
     }
+
+    // No handler matched the (permitted) path — e.g. /v3/api-docs or /swagger-ui/** once Swagger is
+    // disabled in prod, or a typo'd URL from an authenticated client. Without this the catch-all
+    // below would flatten an honest 404 into a 500.
+    @ExceptionHandler(NoResourceFoundException::class)
+    fun handleNoResource(ex: NoResourceFoundException): ResponseEntity<BaseResponse<Nothing>> =
+        ResponseEntity.status(HttpStatus.NOT_FOUND).body(BaseResponse.error(404, "Not found"))
 
     // Anything unmapped (NPE, IllegalState, DB error, …) → generic 500. The real cause + stack
     // trace is logged on the server only, never serialized to the client.
