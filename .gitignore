@@ -44,3 +44,10 @@ data/
 
 ### Local notes (not for the repo) ###
 NEON_COST_OPTIMIZATION.md
+
+### macOS ###
+.DS_Store
+
+### Local-only build config (not committed) ###
+local.properties
+/gradle/gradle-daemon-jvm.properties
