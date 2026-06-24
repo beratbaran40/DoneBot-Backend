@@ -46,7 +46,15 @@ class SecurityConfig {
                     .requestMatchers(org.springframework.http.HttpMethod.GET, "/users/*/avatar").permitAll()
                     .anyRequest().authenticated()
             }
-            .headers { it.frameOptions { fo -> fo.sameOrigin() } }
+            .headers { headers ->
+                headers.frameOptions { fo -> fo.sameOrigin() }
+                // HSTS: instruct browsers to only ever reach this host over HTTPS. Takes effect once
+                // forward-headers-strategy (prod) makes Spring treat proxied requests as secure.
+                // includeSubDomains stays off so the policy can't spill onto sibling *.candroid.dev hosts.
+                headers.httpStrictTransportSecurity { hsts ->
+                    hsts.includeSubDomains(false).maxAgeInSeconds(31_536_000L)
+                }
+            }
             .exceptionHandling {
                 // Default Http403ForbiddenEntryPoint returns 403 for unauthenticated requests,
                 // which the OkHttp Authenticator on the client doesn't recognize (it only fires
