@@ -90,8 +90,8 @@ class MailService(
         <html lang="en"><body style="margin:0;padding:0;background:#F8F9FC;font-family:-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif;color:#090E23;">
         <div style="max-width:480px;margin:0 auto;padding:32px 20px;">
           <div style="background:#FFFFFF;border:1px solid #ECEFF6;border-radius:16px;padding:32px 28px;">
-            <div style="width:88px;height:88px;margin:0 auto 16px;background:#EFF2FF;border-radius:50%;text-align:center;line-height:88px;">
-              <img src="$avatar" width="56" height="56" alt="DoneBot" style="vertical-align:middle;">
+            <div style="width:104px;height:104px;margin:0 auto 16px;background:#EFF2FF;border-radius:50%;text-align:center;line-height:104px;">
+              <img src="$avatar" width="88" height="88" alt="DoneBot" style="vertical-align:middle;">
             </div>
             <h1 style="margin:0;font-size:22px;color:#4566EC;text-align:center;">Reset your password</h1>
             <p style="margin:6px 0 24px;font-size:13px;color:#7A9CC6;text-align:center;">DoneBot account security</p>
@@ -103,7 +103,7 @@ class MailService(
             </p>
             <div style="text-align:center;margin:0 0 28px;">
               <a href="$resetLink" style="display:inline-block;background:#4566EC;color:#ffffff;padding:14px 26px;border-radius:10px;text-decoration:none;font-size:16px;font-weight:600;">
-                Reset password<img src="$avatar" width="20" height="20" alt="" style="vertical-align:middle;margin-left:8px;background:#ffffff;border-radius:50%;">
+                Reset password
               </a>
             </div>
             <p style="margin:0;font-size:12px;line-height:1.5;color:#7A9CC6;">
