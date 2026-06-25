@@ -39,6 +39,7 @@ class SecurityConfig {
                         "/v3/api-docs/**",
                         "/h2-console/**",
                         "/auth/**",
+                        "/reset-password",
                         "/actuator/health",
                         "/legal/**",
                         "/index.html",

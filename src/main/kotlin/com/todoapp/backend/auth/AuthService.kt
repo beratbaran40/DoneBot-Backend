@@ -28,6 +28,7 @@ class AuthService(
     private val google: GoogleAuthService,
     private val mailService: MailService,
     @Value("\${app.password-reset.deep-link}") private val resetDeepLink: String,
+    @Value("\${app.password-reset.web-link:}") private val resetWebLink: String,
     @Value("\${app.password-reset.ttl-minutes}") private val resetTtlMinutes: Long,
 ) {
     private val log = LoggerFactory.getLogger(AuthService::class.java)
@@ -137,10 +138,16 @@ class AuthService(
                 expiresAt = Instant.now().plus(Duration.ofMinutes(resetTtlMinutes)),
             )
         )
-        val link = if (resetDeepLink.contains("?")) {
-            "$resetDeepLink&token=$rawToken"
+        // Prefer the HTTPS landing page (web-link) over the raw custom-scheme deep link: email
+        // clients (Gmail, Outlook, …) refuse to make `todoapp://…` clickable, so the button looked
+        // dead. The landing page is an https URL they DO linkify, and it relaunches the app via the
+        // deep link from inside a real browser (where custom schemes work). Falls back to the deep
+        // link when no web-link is configured (dev / [MAIL:DEV] logging path).
+        val linkBase = resetWebLink.ifBlank { resetDeepLink }
+        val link = if (linkBase.contains("?")) {
+            "$linkBase&token=$rawToken"
         } else {
-            "$resetDeepLink?token=$rawToken"
+            "$linkBase?token=$rawToken"
         }
         try {
             mailService.sendPasswordReset(creds.email, creds.displayName, link)

@@ -84,6 +84,7 @@ class MailService(
         <p>We received a request to reset your DoneBot password. Tap the button below to choose a new one.
         This link is valid for 30 minutes and can only be used once.</p>
         <p><a href="$resetLink" style="display:inline-block;background:#4566EC;color:#fff;padding:12px 20px;border-radius:8px;text-decoration:none;">Reset password</a></p>
+        <p style="color:#7A9CC6;font-size:12px;">If the button doesn't work, copy and paste this link into your browser:<br>$resetLink</p>
         <p style="color:#7A9CC6;font-size:12px;">If you didn't request this, you can safely ignore this email.</p>
         </body></html>
     """.trimIndent()
