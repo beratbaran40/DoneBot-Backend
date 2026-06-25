@@ -9,9 +9,9 @@ import org.springframework.web.servlet.view.RedirectView
 class RootRedirectController(environment: Environment) {
 
     // In prod Swagger is disabled (springdoc off), so "/" must not point at a now-404 Swagger UI.
-    // Send prod visitors to the public privacy page; dev keeps the Swagger landing for convenience.
+    // Send prod visitors to the marketing landing page; dev keeps the Swagger landing for convenience.
     private val target: String =
-        if (environment.activeProfiles.contains("prod")) "/legal/privacy.html" else "/swagger-ui/index.html"
+        if (environment.activeProfiles.contains("prod")) "/index.html" else "/swagger-ui/index.html"
 
     @GetMapping("/")
     fun root(): RedirectView = RedirectView(target)

@@ -1,0 +1,579 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>DoneBot — Your AI productivity assistant</title>
+    <meta name="description"
+          content="Plan tasks, focus with Pomodoro, collaborate with family, and get more done with DoneBot's friendly AI assistant.">
+    <link rel="icon" href="/legal/donebot-avatar.png">
+
+    <!-- Open Graph / link previews -->
+    <meta property="og:type" content="website">
+    <meta property="og:title" content="DoneBot — Your AI productivity assistant">
+    <meta property="og:description"
+          content="Plan tasks, focus with Pomodoro, collaborate with family, and get more done — guided by a friendly AI assistant.">
+    <meta property="og:image" content="https://donebot-backend.onrender.com/assets/donebot_hero.png">
+    <meta property="og:url" content="https://donebot-backend.onrender.com/">
+    <meta name="twitter:card" content="summary_large_image">
+
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --bg: #F8F9FC;
+            --fg: #090E23;
+            --muted: #717171;
+            --primary: #4566EC;
+            --accent: #1C3082;
+            --soft-pink: #F5D3BB;
+            --card: #EDF4FF;
+            --card-border: #A9BAFF;
+            --surface: #FFFAF0;
+            --shadow: 0 4px 14px rgba(69, 102, 236, 0.10);
+            --shadow-soft: 0 2px 8px rgba(69, 102, 236, 0.06);
+            --radius-card: 16px;
+            --radius-pill: 999px;
+        }
+        @media (prefers-color-scheme: dark) {
+            :root {
+                --bg: #0F1116;
+                --fg: #ECECEC;
+                --muted: #9CA3AF;
+                --primary: #A9BAFF;
+                --accent: #C7D0FF;
+                --soft-pink: #3D2820;
+                --card: #1A1D24;
+                --card-border: #3D6A9E;
+                --surface: #16171B;
+                --shadow: 0 4px 14px rgba(0, 0, 0, 0.45);
+                --shadow-soft: 0 2px 8px rgba(0, 0, 0, 0.30);
+            }
+        }
+        * { box-sizing: border-box; }
+        html { scroll-behavior: smooth; }
+        body {
+            font-family: "Poppins", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+            max-width: 1040px;
+            margin: 0 auto;
+            padding: 24px;
+            color: var(--fg);
+            background: var(--bg);
+            line-height: 1.65;
+            font-weight: 400;
+        }
+
+        /* Header card with DoneBot avatar (mirrors in-app top bar) */
+        .header-card {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            background: var(--surface);
+            border-radius: var(--radius-card);
+            padding: 12px 16px;
+            margin-bottom: 16px;
+            box-shadow: var(--shadow-soft);
+        }
+        .header-avatar {
+            width: 44px;
+            height: 44px;
+            border-radius: 50%;
+            background: var(--card);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            overflow: hidden;
+            flex-shrink: 0;
+        }
+        .header-avatar img { width: 40px; height: 40px; border-radius: 50%; object-fit: cover; }
+        .header-text { display: flex; flex-direction: column; gap: 2px; }
+        .header-title { font-weight: 600; font-size: 16px; color: var(--fg); letter-spacing: 0.1px; }
+        .header-sub { font-size: 12px; color: var(--muted); }
+
+        /* Language toggle */
+        .lang-bar {
+            position: sticky;
+            top: 12px;
+            display: flex;
+            justify-content: flex-end;
+            margin-bottom: 16px;
+            z-index: 10;
+        }
+        .lang-pill {
+            display: inline-flex;
+            background: var(--surface);
+            border: 1px solid var(--card-border);
+            border-radius: var(--radius-pill);
+            padding: 4px;
+            box-shadow: var(--shadow-soft);
+        }
+        .lang-pill button {
+            font: inherit;
+            font-size: 13px;
+            font-weight: 500;
+            padding: 6px 16px;
+            border-radius: var(--radius-pill);
+            border: 0;
+            background: transparent;
+            color: var(--muted);
+            cursor: pointer;
+            transition: background 150ms, color 150ms;
+        }
+        .lang-pill button[aria-pressed="true"] { background: var(--primary); color: #fff; font-weight: 600; }
+        .lang-pill button:hover:not([aria-pressed="true"]) { color: var(--fg); }
+
+        a {
+            color: var(--primary);
+            text-decoration: none;
+            border-bottom: 1px dotted var(--primary);
+            transition: color 150ms, border-bottom-color 150ms;
+        }
+        a:hover { color: var(--accent); border-bottom-color: var(--accent); }
+        strong { font-weight: 600; }
+
+        /* Hero */
+        .hero {
+            display: grid;
+            grid-template-columns: 1.05fr 0.95fr;
+            gap: 36px;
+            align-items: center;
+            margin: 28px 0 8px;
+        }
+        .hero-title { color: var(--accent); font-weight: 600; font-size: 38px; line-height: 1.2; margin: 0 0 14px; }
+        .hero-sub { color: var(--muted); font-size: 17px; line-height: 1.6; margin: 0 0 24px; }
+        .hero-cta { display: flex; align-items: center; gap: 16px; flex-wrap: wrap; }
+        .hero-art {
+            width: 100%;
+            max-width: 418px;
+            aspect-ratio: 1 / 1;
+            margin: 0 auto;
+            overflow: hidden;
+            border-radius: 24%;
+            box-shadow: var(--shadow);
+        }
+        .hero-art img {
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+            transform: scale(1.08);
+            display: block;
+        }
+
+        /* "Coming soon to Google Play" badge (swap for the real badge + link at launch) */
+        .badge {
+            display: inline-flex;
+            align-items: center;
+            gap: 10px;
+            background: #0F1116;
+            color: #fff;
+            border-radius: 12px;
+            padding: 10px 18px;
+            border: 1px solid rgba(255, 255, 255, 0.14);
+            cursor: default;
+            user-select: none;
+        }
+        .badge .play { width: auto; height: 24px; flex-shrink: 0; display: block; }
+        .badge-text { display: flex; flex-direction: column; line-height: 1.15; text-align: left; }
+        .badge-text small { font-size: 10px; letter-spacing: 0.6px; text-transform: uppercase; opacity: 0.85; }
+        .badge-text strong { font-size: 16px; font-weight: 600; color: #fff; }
+
+        /* Sections */
+        .section { margin: 52px 0; }
+        .section-title { color: var(--accent); font-weight: 600; font-size: 26px; text-align: center; margin: 0 0 8px; }
+        .section-sub { color: var(--muted); font-size: 15px; text-align: center; margin: 0 auto 28px; max-width: 560px; }
+
+        /* Features grid */
+        .features { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 16px; }
+        .feature-card {
+            background: var(--card);
+            border: 1px solid var(--card-border);
+            border-radius: var(--radius-card);
+            padding: 20px;
+            box-shadow: var(--shadow-soft);
+        }
+        .feature-icon {
+            width: 44px;
+            height: 44px;
+            border-radius: 12px;
+            background: var(--surface);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 22px;
+            margin-bottom: 12px;
+        }
+        .feature-card h3 { color: var(--fg); font-weight: 600; font-size: 16px; margin: 0 0 6px; }
+        .feature-card p { color: var(--muted); font-size: 13.5px; margin: 0; }
+
+        /* Screenshot carousel */
+        .shots {
+            display: flex;
+            gap: 20px;
+            overflow-x: auto;
+            padding: 8px 4px 18px;
+            scroll-snap-type: x mandatory;
+            -webkit-overflow-scrolling: touch;
+        }
+        .shot { flex: 0 0 auto; scroll-snap-align: center; text-align: center; }
+        .phone {
+            width: 208px;
+            border-radius: 30px;
+            padding: 9px;
+            background: #0F1116;
+            box-shadow: var(--shadow);
+        }
+        .phone img { width: 100%; border-radius: 22px; display: block; }
+        .shot-cap { margin-top: 10px; font-size: 13px; color: var(--muted); }
+
+        /* Closing CTA band */
+        .cta-band {
+            background: var(--card);
+            border: 1px solid var(--card-border);
+            border-radius: var(--radius-card);
+            padding: 40px 24px;
+            text-align: center;
+            box-shadow: var(--shadow);
+            margin: 52px 0;
+        }
+        .cta-band h2 { color: var(--accent); font-weight: 600; font-size: 24px; margin: 0 0 8px; }
+        .cta-band p { color: var(--muted); margin: 0 0 22px; }
+        .cta-band .badge-wrap { display: flex; justify-content: center; }
+
+        /* Footer — creator card */
+        .footer { margin-top: 56px; padding-top: 24px; border-top: 1px solid var(--card-border); }
+        .footer-links { text-align: center; margin: 0 0 20px; font-size: 13.5px; }
+        .footer-links a { margin: 0 10px; }
+        .creator-card {
+            display: flex;
+            align-items: center;
+            gap: 14px;
+            padding: 14px 16px;
+            background: var(--surface);
+            border: 1px solid var(--card-border);
+            border-radius: var(--radius-card);
+            box-shadow: var(--shadow-soft);
+            max-width: 480px;
+            margin: 0 auto;
+        }
+        .creator-avatar {
+            position: relative;
+            width: 56px;
+            height: 56px;
+            border-radius: 50%;
+            background: var(--card);
+            overflow: hidden;
+            flex-shrink: 0;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            border: 2px solid var(--primary);
+        }
+        .creator-avatar img { width: 100%; height: 100%; object-fit: cover; }
+        .creator-avatar .initials-label {
+            position: absolute;
+            inset: 0;
+            display: none;
+            align-items: center;
+            justify-content: center;
+            font-weight: 600;
+            font-size: 20px;
+            color: var(--primary);
+            letter-spacing: 0.5px;
+        }
+        .creator-avatar.no-photo img { display: none; }
+        .creator-avatar.no-photo .initials-label { display: flex; }
+        .creator-info { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+        .creator-name { font-weight: 600; font-size: 15px; color: var(--fg); line-height: 1.2; }
+        .creator-role { font-size: 12px; color: var(--muted); line-height: 1.3; }
+        .creator-icons { display: flex; gap: 6px; margin-top: 6px; }
+        .creator-icons a {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            width: 28px;
+            height: 28px;
+            border-radius: 50%;
+            background: var(--card);
+            color: var(--muted);
+            border: 1px solid transparent;
+            transition: color 120ms, border-color 120ms, transform 120ms;
+        }
+        .creator-icons a:hover { color: var(--primary); border-color: var(--primary); transform: scale(1.1); }
+        .creator-icons svg { width: 14px; height: 14px; fill: currentColor; }
+        .footer-meta-line {
+            margin-top: 16px;
+            text-align: center;
+            color: var(--muted);
+            font-size: 11px;
+            letter-spacing: 0.3px;
+        }
+        .footer-meta-line .dot { margin: 0 6px; opacity: 0.5; }
+
+        /* Mobile */
+        @media (max-width: 760px) {
+            .hero { grid-template-columns: 1fr; text-align: center; gap: 24px; margin-top: 12px; }
+            .hero-title { font-size: 30px; }
+            .hero-cta { justify-content: center; }
+            .hero-art { order: -1; }
+            .hero-art { max-width: 330px; }
+        }
+        @media (max-width: 480px) {
+            body { padding: 16px; }
+            .section-title { font-size: 22px; }
+        }
+    </style>
+</head>
+<body>
+
+<div class="header-card">
+    <div class="header-avatar">
+        <img src="/legal/donebot-avatar.png" alt="DoneBot" onerror="this.style.display='none'">
+    </div>
+    <div class="header-text">
+        <span class="header-title">DoneBot</span>
+        <span class="header-sub" data-lang-text-en="Productivity assistant" data-lang-text-tr="Verimlilik asistanı">Productivity assistant</span>
+    </div>
+</div>
+
+<div class="lang-bar">
+    <div class="lang-pill" role="tablist" aria-label="Language">
+        <button type="button" data-set="en" aria-pressed="true">English</button>
+        <button type="button" data-set="tr" aria-pressed="false">Türkçe</button>
+    </div>
+</div>
+
+<!-- ======================== HERO ======================== -->
+<section class="hero">
+    <div class="hero-text">
+        <h1 class="hero-title"
+            data-lang-text-en="Your tasks, your day, your AI assistant — all in one app."
+            data-lang-text-tr="Görevlerin, günün ve yapay zekâ asistanın — tek uygulamada.">
+            Your tasks, your day, your AI assistant — all in one app.
+        </h1>
+        <p class="hero-sub"
+           data-lang-text-en="DoneBot helps you plan tasks, focus with Pomodoro, collaborate with family, and get more done — guided by a friendly AI assistant."
+           data-lang-text-tr="DoneBot görevlerini planlamana, Pomodoro ile odaklanmana, ailenle iş birliği yapmana ve daha fazlasını başarmana yardım eder — dost canlısı bir yapay zekâ asistanı eşliğinde.">
+            DoneBot helps you plan tasks, focus with Pomodoro, collaborate with family, and get more done — guided by a friendly AI assistant.
+        </p>
+        <div class="hero-cta">
+            <span class="badge" role="img" aria-label="Coming soon to Google Play">
+                <img class="play" src="/assets/google-play-icon.svg" alt="" aria-hidden="true">
+                <span class="badge-text">
+                    <small data-lang-text-en="Coming soon to" data-lang-text-tr="Yakında">Coming soon to</small>
+                    <strong>Google Play</strong>
+                </span>
+            </span>
+        </div>
+    </div>
+    <div class="hero-art">
+        <img src="/assets/donebot_hero.png" alt="DoneBot assistant">
+    </div>
+</section>
+
+<!-- ======================== FEATURES ======================== -->
+<section class="section" id="features">
+    <h2 class="section-title"
+        data-lang-text-en="Everything you need to stay on top"
+        data-lang-text-tr="Üstesinden gelmek için ihtiyacın olan her şey">
+        Everything you need to stay on top
+    </h2>
+    <p class="section-sub"
+       data-lang-text-en="A focused productivity app with an AI assistant at its core."
+       data-lang-text-tr="Merkezinde bir yapay zekâ asistanı olan, sade bir verimlilik uygulaması.">
+        A focused productivity app with an AI assistant at its core.
+    </p>
+    <div class="features">
+        <div class="feature-card">
+            <div class="feature-icon">🤖</div>
+            <h3 data-lang-text-en="DoneBot AI assistant" data-lang-text-tr="DoneBot yapay zekâ asistanı">DoneBot AI assistant</h3>
+            <p data-lang-text-en="Chat naturally to create, reschedule, and complete tasks — DoneBot understands what you mean."
+               data-lang-text-tr="Doğal dille konuşarak görev oluştur, ertele ve tamamla — DoneBot ne demek istediğini anlar.">
+                Chat naturally to create, reschedule, and complete tasks — DoneBot understands what you mean.</p>
+        </div>
+        <div class="feature-card">
+            <div class="feature-icon">✅</div>
+            <h3 data-lang-text-en="Smart tasks" data-lang-text-tr="Akıllı görevler">Smart tasks</h3>
+            <p data-lang-text-en="Reminders, due dates, and recurring tasks — from daily to yearly — that build themselves."
+               data-lang-text-tr="Hatırlatmalar, son tarihler ve kendini oluşturan tekrarlayan görevler — günlükten yıllığa.">
+                Reminders, due dates, and recurring tasks — from daily to yearly — that build themselves.</p>
+        </div>
+        <div class="feature-card">
+            <div class="feature-icon">👨‍👩‍👧</div>
+            <h3 data-lang-text-en="Family &amp; groups" data-lang-text-tr="Aile ve gruplar">Family &amp; groups</h3>
+            <p data-lang-text-en="Share lists, assign tasks, and track progress together in real time."
+               data-lang-text-tr="Listeleri paylaş, görev ata ve ilerlemeyi birlikte gerçek zamanlı takip et.">
+                Share lists, assign tasks, and track progress together in real time.</p>
+        </div>
+        <div class="feature-card">
+            <div class="feature-icon">🍅</div>
+            <h3 data-lang-text-en="Pomodoro focus" data-lang-text-tr="Pomodoro odağı">Pomodoro focus</h3>
+            <p data-lang-text-en="A built-in focus timer with breaks to keep you in the zone."
+               data-lang-text-tr="Molalarla seni odakta tutan dahili bir odak zamanlayıcısı.">
+                A built-in focus timer with breaks to keep you in the zone.</p>
+        </div>
+        <div class="feature-card">
+            <div class="feature-icon">📅</div>
+            <h3 data-lang-text-en="Calendar" data-lang-text-tr="Takvim">Calendar</h3>
+            <p data-lang-text-en="See every task and deadline on a clear, interactive calendar."
+               data-lang-text-tr="Her görevi ve son tarihi net, etkileşimli bir takvimde gör.">
+                See every task and deadline on a clear, interactive calendar.</p>
+        </div>
+        <div class="feature-card">
+            <div class="feature-icon">🔔</div>
+            <h3 data-lang-text-en="Smart reminders" data-lang-text-tr="Akıllı hatırlatmalar">Smart reminders</h3>
+            <p data-lang-text-en="Timely notifications so the right task surfaces at the right moment."
+               data-lang-text-tr="Doğru görevin doğru anda öne çıkması için zamanında bildirimler.">
+                Timely notifications so the right task surfaces at the right moment.</p>
+        </div>
+        <div class="feature-card">
+            <div class="feature-icon">📔</div>
+            <h3 data-lang-text-en="Journal" data-lang-text-tr="Günlük">Journal</h3>
+            <p data-lang-text-en="A private, on-device journal to capture how your day went."
+               data-lang-text-tr="Gününün nasıl geçtiğini not alabileceğin, cihazında kalan özel bir günlük.">
+                A private, on-device journal to capture how your day went.</p>
+        </div>
+        <div class="feature-card">
+            <div class="feature-icon">🔒</div>
+            <h3 data-lang-text-en="Private &amp; synced" data-lang-text-tr="Gizli ve senkron">Private &amp; synced</h3>
+            <p data-lang-text-en="Encrypted, synced across your devices, and yours alone."
+               data-lang-text-tr="Şifreli, cihazların arasında senkron ve yalnızca sana ait.">
+                Encrypted, synced across your devices, and yours alone.</p>
+        </div>
+    </div>
+</section>
+
+<!-- ======================== SCREENSHOTS ======================== -->
+<section class="section">
+    <h2 class="section-title"
+        data-lang-text-en="A peek inside DoneBot"
+        data-lang-text-tr="DoneBot'a bir bakış">
+        A peek inside DoneBot
+    </h2>
+    <p class="section-sub"
+       data-lang-text-en="Swipe through a few of the screens you'll use every day."
+       data-lang-text-tr="Her gün kullanacağın ekranlardan birkaçını kaydırarak gör.">
+        Swipe through a few of the screens you'll use every day.
+    </p>
+    <div class="shots">
+        <div class="shot">
+            <div class="phone"><img src="/assets/screenshots/home.png" alt="DoneBot home screen"></div>
+            <div class="shot-cap" data-lang-text-en="Home" data-lang-text-tr="Ana ekran">Home</div>
+        </div>
+        <div class="shot">
+            <div class="phone"><img src="/assets/screenshots/chat.png" alt="DoneBot AI chat"></div>
+            <div class="shot-cap" data-lang-text-en="DoneBot chat" data-lang-text-tr="DoneBot sohbeti">DoneBot chat</div>
+        </div>
+        <div class="shot">
+            <div class="phone"><img src="/assets/screenshots/calendar.png" alt="Calendar view"></div>
+            <div class="shot-cap" data-lang-text-en="Calendar" data-lang-text-tr="Takvim">Calendar</div>
+        </div>
+        <div class="shot">
+            <div class="phone"><img src="/assets/screenshots/groups.png" alt="Groups"></div>
+            <div class="shot-cap" data-lang-text-en="Groups" data-lang-text-tr="Gruplar">Groups</div>
+        </div>
+        <div class="shot">
+            <div class="phone"><img src="/assets/screenshots/pomodoro.png" alt="Pomodoro timer"></div>
+            <div class="shot-cap" data-lang-text-en="Pomodoro" data-lang-text-tr="Pomodoro">Pomodoro</div>
+        </div>
+    </div>
+</section>
+
+<!-- ======================== CLOSING CTA ======================== -->
+<section class="cta-band">
+    <h2 data-lang-text-en="Ready to get more done?" data-lang-text-tr="Daha fazlasını başarmaya hazır mısın?">Ready to get more done?</h2>
+    <p data-lang-text-en="DoneBot is launching soon on Android." data-lang-text-tr="DoneBot yakında Android'de.">DoneBot is launching soon on Android.</p>
+    <div class="badge-wrap">
+        <span class="badge" role="img" aria-label="Coming soon to Google Play">
+            <img class="play" src="/assets/google-play-icon.svg" alt="" aria-hidden="true">
+            <span class="badge-text">
+                <small data-lang-text-en="Coming soon to" data-lang-text-tr="Yakında">Coming soon to</small>
+                <strong>Google Play</strong>
+            </span>
+        </span>
+    </div>
+</section>
+
+<!-- ======================== FOOTER ======================== -->
+<footer class="footer">
+    <div class="footer-links">
+        <a href="/legal/privacy.html" data-lang-text-en="Privacy Policy" data-lang-text-tr="Gizlilik Politikası">Privacy Policy</a>
+        <a href="/legal/terms.html" data-lang-text-en="Terms of Service" data-lang-text-tr="Kullanım Koşulları">Terms of Service</a>
+        <a href="/legal/delete-account.html" data-lang-text-en="Delete account" data-lang-text-tr="Hesap silme">Delete account</a>
+    </div>
+    <div class="creator-card">
+        <div class="creator-avatar no-photo" id="creatorAvatar">
+            <img src="/legal/berat-avatar.jpg" alt="Berat Baran"
+                 onload="this.parentElement.classList.remove('no-photo')"
+                 onerror="this.style.display='none'">
+            <span class="initials-label">BB</span>
+        </div>
+        <div class="creator-info">
+            <div class="creator-name">Berat Baran</div>
+            <div class="creator-role"
+                 data-lang-text-en="Android Developer · İstanbul"
+                 data-lang-text-tr="Android Developer · İstanbul">Android Developer · İstanbul</div>
+            <div class="creator-icons" aria-label="Berat Baran links">
+                <a href="https://www.linkedin.com/in/berat-baran-038963218/" target="_blank" rel="noopener noreferrer" aria-label="LinkedIn">
+                    <svg viewBox="0 0 24 24" role="img" aria-hidden="true">
+                        <path d="M20.447 20.452h-3.554v-5.569c0-1.328-.027-3.037-1.852-3.037-1.853 0-2.136 1.445-2.136 2.939v5.667H9.351V9h3.414v1.561h.046c.477-.9 1.637-1.85 3.37-1.85 3.601 0 4.267 2.37 4.267 5.455v6.286zM5.337 7.433a2.062 2.062 0 01-2.063-2.065 2.063 2.063 0 112.063 2.065zm1.782 13.019H3.555V9h3.564v11.452zM22.225 0H1.771C.792 0 0 .774 0 1.729v20.542C0 23.227.792 24 1.771 24h20.451C23.2 24 24 23.227 24 22.271V1.729C24 .774 23.2 0 22.222 0h.003z"/>
+                    </svg>
+                </a>
+                <a href="https://github.com/beratbaran40" target="_blank" rel="noopener noreferrer" aria-label="GitHub">
+                    <svg viewBox="0 0 24 24" role="img" aria-hidden="true">
+                        <path d="M12 .297c-6.63 0-12 5.373-12 12 0 5.303 3.438 9.8 8.205 11.385.6.113.82-.258.82-.577 0-.285-.01-1.04-.015-2.04-3.338.724-4.042-1.61-4.042-1.61C4.422 18.07 3.633 17.7 3.633 17.7c-1.087-.744.084-.729.084-.729 1.205.084 1.838 1.236 1.838 1.236 1.07 1.835 2.809 1.305 3.495.998.108-.776.417-1.305.76-1.605-2.665-.3-5.466-1.332-5.466-5.93 0-1.31.465-2.38 1.235-3.22-.135-.303-.54-1.523.105-3.176 0 0 1.005-.322 3.3 1.23.96-.267 1.98-.4 3-.405 1.02.005 2.04.138 3 .405 2.28-1.552 3.285-1.23 3.285-1.23.645 1.653.24 2.873.12 3.176.765.84 1.23 1.91 1.23 3.22 0 4.61-2.805 5.625-5.475 5.92.42.36.81 1.096.81 2.22 0 1.606-.015 2.896-.015 3.286 0 .315.21.69.825.57C20.565 22.092 24 17.592 24 12.297c0-6.627-5.373-12-12-12"/>
+                    </svg>
+                </a>
+                <a href="mailto:donebotapp@gmail.com" aria-label="Email">
+                    <svg viewBox="0 0 24 24" role="img" aria-hidden="true">
+                        <path d="M22 6c0-1.1-.9-2-2-2H4c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V6zm-2 0l-8 5-8-5h16zm0 12H4V8l8 5 8-5v10z"/>
+                    </svg>
+                </a>
+            </div>
+        </div>
+    </div>
+    <div class="footer-meta-line">
+        <span data-lang-text-en="Made with care, 2026" data-lang-text-tr="İtinayla yapıldı, 2026">Made with care, 2026</span>
+        <span class="dot">·</span>
+        © 2026 DoneBot
+    </div>
+</footer>
+
+<script>
+    (function() {
+        var STORAGE_KEY = 'donebot_legal_lang';
+        var buttons = document.querySelectorAll('.lang-pill button[data-set]');
+        var langTextNodes = document.querySelectorAll('[data-lang-text-en]');
+
+        function pickInitialLang() {
+            var stored = null;
+            try { stored = localStorage.getItem(STORAGE_KEY); } catch (e) { /* private mode */ }
+            if (stored === 'en' || stored === 'tr') return stored;
+            var nav = (navigator.language || navigator.userLanguage || 'en').toLowerCase();
+            return nav.indexOf('tr') === 0 ? 'tr' : 'en';
+        }
+
+        function setLang(lang) {
+            buttons.forEach(function(b) {
+                b.setAttribute('aria-pressed', b.getAttribute('data-set') === lang ? 'true' : 'false');
+            });
+            langTextNodes.forEach(function(node) {
+                var attr = 'data-lang-text-' + lang;
+                if (node.hasAttribute(attr)) {
+                    node.textContent = node.getAttribute(attr);
+                }
+            });
+            document.documentElement.setAttribute('lang', lang);
+            try { localStorage.setItem(STORAGE_KEY, lang); } catch (e) { /* private mode */ }
+        }
+
+        buttons.forEach(function(b) {
+            b.addEventListener('click', function() { setLang(b.getAttribute('data-set')); });
+        });
+
+        setLang(pickInitialLang());
+    })();
+</script>
+
+</body>
+</html>
