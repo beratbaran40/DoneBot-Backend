@@ -38,6 +38,8 @@ dependencies {
 	// Vertex AI Java SDK — server-side Gemini access for the chat proxy
 	// (replaces the firebase-ai dependency that used to live on the client).
 	implementation("com.google.cloud:google-cloud-vertexai:1.20.0")
+	// QR code generation for the desktop password-reset landing page (scan-to-continue on phone).
+	implementation("com.google.zxing:core:3.5.3")
 	runtimeOnly("com.h2database:h2")
 	runtimeOnly("org.postgresql:postgresql")
 	implementation("org.springframework.boot:spring-boot-flyway")
