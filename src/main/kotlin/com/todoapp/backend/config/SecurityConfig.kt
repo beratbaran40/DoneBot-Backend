@@ -42,6 +42,8 @@ class SecurityConfig {
                         "/auth/**",
                         "/actuator/health",
                         "/legal/**",
+                        "/index.html",
+                        "/assets/**",
                     ).permitAll()
                     .requestMatchers(org.springframework.http.HttpMethod.GET, "/users/*/avatar").permitAll()
                     .anyRequest().authenticated()
