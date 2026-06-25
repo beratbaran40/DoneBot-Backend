@@ -84,15 +84,13 @@ class MailService(
     """.trimIndent()
 
     private fun buildHtml(displayName: String, resetLink: String): String {
-        val avatar = "$assetBaseUrl/assets/donebot-avatar.png"
+        val medallion = "$assetBaseUrl/assets/donebot-medallion.png"
         return """
         <!doctype html>
         <html lang="en"><body style="margin:0;padding:0;background:#F8F9FC;font-family:-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif;color:#090E23;">
         <div style="max-width:480px;margin:0 auto;padding:32px 20px;">
           <div style="background:#FFFFFF;border:1px solid #ECEFF6;border-radius:16px;padding:32px 28px;">
-            <div style="width:104px;height:104px;margin:0 auto 16px;background:#EFF2FF;border-radius:50%;text-align:center;line-height:104px;">
-              <img src="$avatar" width="88" height="88" alt="DoneBot" style="vertical-align:middle;">
-            </div>
+            <img src="$medallion" width="104" height="104" alt="DoneBot" style="display:block;margin:0 auto 16px;">
             <h1 style="margin:0;font-size:22px;color:#4566EC;text-align:center;">Reset your password</h1>
             <p style="margin:6px 0 24px;font-size:13px;color:#7A9CC6;text-align:center;">DoneBot account security</p>
             <p style="margin:0 0 12px;font-size:15px;line-height:1.5;">Hi ${esc(displayName)} &#128075;</p>
