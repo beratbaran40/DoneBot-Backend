@@ -1,6 +1,7 @@
 package com.todoapp.backend.config
 
 import com.todoapp.backend.auth.JwtAuthFilter
+import org.springframework.beans.factory.annotation.Value
 import org.springframework.boot.context.properties.EnableConfigurationProperties
 import org.springframework.context.annotation.Bean
 import org.springframework.context.annotation.Configuration
@@ -25,7 +26,11 @@ class SecurityConfig {
     fun passwordEncoder(): PasswordEncoder = BCryptPasswordEncoder()
 
     @Bean
-    fun securityFilterChain(http: HttpSecurity, jwtAuthFilter: JwtAuthFilter): SecurityFilterChain {
+    fun securityFilterChain(
+        http: HttpSecurity,
+        jwtAuthFilter: JwtAuthFilter,
+        @Value("\${springdoc.api-docs.enabled:true}") swaggerEnabled: Boolean,
+    ): SecurityFilterChain {
         http
             .csrf { it.disable() }
             .sessionManagement { it.sessionCreationPolicy(SessionCreationPolicy.STATELESS) }
@@ -34,19 +39,30 @@ class SecurityConfig {
                     .requestMatchers(
                         "/",
                         "/error",
-                        "/swagger-ui/**",
-                        "/swagger-ui.html",
-                        "/v3/api-docs/**",
                         "/h2-console/**",
                         "/auth/**",
                         "/reset-password",
+                        // Liveness/readiness probes (JVM-only, no DB hit) must stay reachable by an
+                        // external uptime monitor without a JWT. Safe: show-details=never and only the
+                        // `health` endpoint is on the management exposure list, so no internals leak.
                         "/actuator/health",
+                        "/actuator/health/**",
                         "/legal/**",
                         "/index.html",
                         "/assets/**",
                     ).permitAll()
                     .requestMatchers(org.springframework.http.HttpMethod.GET, "/users/*/avatar").permitAll()
-                    .anyRequest().authenticated()
+                // Open Swagger UI + OpenAPI JSON only when springdoc actually serves them (dev). In prod
+                // springdoc is disabled; permitting these would let /swagger-ui/index.html reach a
+                // half-initialised resource handler and 500 — leaving them OUT of permitAll → clean 401.
+                if (swaggerEnabled) {
+                    auth.requestMatchers(
+                        "/swagger-ui/**",
+                        "/swagger-ui.html",
+                        "/v3/api-docs/**",
+                    ).permitAll()
+                }
+                auth.anyRequest().authenticated()
             }
             .headers { headers ->
                 headers.frameOptions { fo -> fo.sameOrigin() }
