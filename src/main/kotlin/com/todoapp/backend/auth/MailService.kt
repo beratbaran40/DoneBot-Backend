@@ -60,7 +60,6 @@ class MailService(
             ?.lowercase()
         return when (provider) {
             "google" -> "Google"
-            "facebook" -> "Facebook"
             else -> "a social account"
         }
     }

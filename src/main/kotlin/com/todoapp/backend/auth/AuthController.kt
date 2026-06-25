@@ -45,10 +45,6 @@ class AuthController(
     fun google(@Valid @RequestBody req: OAuthTokenRequest): BaseResponse<AuthResponseData> =
         BaseResponse.ok(authService.googleLogin(req))
 
-    @PostMapping("/facebook")
-    fun facebook(@Valid @RequestBody req: OAuthTokenRequest): BaseResponse<AuthResponseData> =
-        BaseResponse.ok(authService.facebookLogin(req))
-
     @PostMapping("/forgot-password")
     fun forgotPassword(
         @Valid @RequestBody req: ForgotPasswordRequest,
@@ -71,7 +67,7 @@ class AuthController(
 
     @ExceptionHandler(AuthException::class)
     fun handleAuth(ex: AuthException): ResponseEntity<BaseResponse<Nothing>> {
-        // "This email uses Google/Facebook" is a conflict, not bad credentials — return 409 so
+        // "This email uses Google" is a conflict, not bad credentials — return 409 so
         // the client's 401 handling (which discards the body) doesn't swallow the errorCode.
         val status = if (ex.errorCode?.startsWith("oauth_account") == true) {
             HttpStatus.CONFLICT

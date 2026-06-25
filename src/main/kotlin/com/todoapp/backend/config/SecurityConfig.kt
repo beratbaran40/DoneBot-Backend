@@ -17,7 +17,6 @@ import org.springframework.security.web.authentication.UsernamePasswordAuthentic
 @EnableConfigurationProperties(
     JwtProperties::class,
     GoogleOauthProperties::class,
-    FacebookOauthProperties::class,
     FirebaseProperties::class,
 )
 class SecurityConfig {
