@@ -31,6 +31,7 @@ class UserController(
     private val passwordEncoder: PasswordEncoder,
     private val accountDeletionService: AccountDeletionService,
     private val notificationPublisher: NotificationPublisher,
+    private val userDataExportService: UserDataExportService,
 ) {
 
     @GetMapping("/me")
@@ -40,6 +41,11 @@ class UserController(
         }
         return BaseResponse.ok(user.toDto())
     }
+
+    // GDPR data export: everything the server holds for the caller, as downloadable JSON.
+    @GetMapping("/me/export")
+    fun exportMyData(): BaseResponse<UserDataExport> =
+        BaseResponse.ok(userDataExportService.export(CurrentUser.id()))
 
     @PutMapping("/me")
     @Transactional
