@@ -18,6 +18,7 @@ import org.springframework.web.server.ResponseStatusException
 @RequestMapping("/chat")
 class ChatController(
     private val chatService: ChatService,
+    private val chatReportService: ChatReportService,
     private val rateLimiter: ChatRateLimiter,
 ) {
     @PostMapping("/message")
@@ -33,5 +34,15 @@ class ChatController(
             )
         }
         return BaseResponse.ok(chatService.reply(userId, request))
+    }
+
+    /**
+     * Records a user report of an offensive/inappropriate assistant reply for moderation
+     * review. Required by Google Play's Generative AI policy (in-app reporting of AI content).
+     */
+    @PostMapping("/report")
+    fun report(@Valid @RequestBody request: ChatReportRequest): BaseResponse<Unit> {
+        chatReportService.record(CurrentUser.id(), request)
+        return BaseResponse.ok("Report received")
     }
 }

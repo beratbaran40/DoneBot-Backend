@@ -54,6 +54,36 @@ class MailService(
         mailSender.send(message)
     }
 
+    /**
+     * Heads-up to the admin inbox that a user flagged a DoneBot reply for moderation review.
+     * No-op when SMTP is unconfigured (host blank) — the report is persisted regardless; this
+     * only adds an active notification on top of the chat_reports row and server log.
+     */
+    fun sendReportNotification(reporterUserId: Long, messageContent: String) {
+        if (host.isBlank()) {
+            log.warn("[MAIL:DEV] chat report from user={} (admin email skipped, SMTP off)", reporterUserId)
+            return
+        }
+        val message = mailSender.createMimeMessage()
+        val helper = MimeMessageHelper(message, true, "UTF-8")
+        helper.setFrom(from, fromName)
+        helper.setTo(from)
+        helper.setSubject("DoneBot: a chat response was reported")
+        helper.setText(buildReportHtml(reporterUserId, messageContent), true)
+        mailSender.send(message)
+    }
+
+    private fun buildReportHtml(reporterUserId: Long, messageContent: String): String = """
+        <!doctype html>
+        <html><body style="font-family:-apple-system,Segoe UI,Roboto,sans-serif;padding:24px;color:#090E23;">
+        <h2 style="color:#B2282D;">A chat response was reported</h2>
+        <p>User <strong>#$reporterUserId</strong> flagged a DoneBot reply for review.</p>
+        <p style="font-weight:600;margin-bottom:4px;">Reported reply:</p>
+        <blockquote style="margin:0;padding:12px 16px;background:#FFE6E7;border-radius:8px;white-space:pre-wrap;">${esc(messageContent)}</blockquote>
+        <p style="color:#7A9CC6;font-size:12px;margin-top:20px;">Full context in the chat_reports table.</p>
+        </body></html>
+    """.trimIndent()
+
     private fun providerLabel(providersCsv: String): String {
         val provider = providersCsv.split(",")
             .map { it.trim() }

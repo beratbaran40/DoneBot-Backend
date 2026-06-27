@@ -22,6 +22,22 @@ data class ChatMessageRequest(
     }
 }
 
+/** Inbound payload for `POST /chat/report` — flags an offensive/inappropriate AI reply for review. */
+data class ChatReportRequest(
+    @field:NotBlank
+    @field:Size(max = MAX_REPORT_CONTENT_LENGTH)
+    val messageContent: String,
+
+    /** Optional free-text reason. Currently the client sends none (one-tap report). */
+    @field:Size(max = MAX_REPORT_REASON_LENGTH)
+    val reason: String? = null,
+) {
+    companion object {
+        const val MAX_REPORT_CONTENT_LENGTH = 4000
+        const val MAX_REPORT_REASON_LENGTH = 500
+    }
+}
+
 /** A single previous turn in the conversation. The client owns this list. */
 data class ChatHistoryTurn(
     /** "user" or "assistant" — anything else is ignored. */
