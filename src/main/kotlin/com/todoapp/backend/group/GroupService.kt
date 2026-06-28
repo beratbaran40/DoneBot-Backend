@@ -102,6 +102,27 @@ class GroupService(
         logActivity(groupId, userId, GroupActivityType.MEMBER_REMOVED, "Removed $name from the group")
     }
 
+    /**
+     * The caller removes themselves from [groupId]. Any plain member may leave. The owner (the
+     * single ADMIN) must transfer ownership first — unless they are the last member left, in which
+     * case leaving tears down the whole group (same teardown as [delete]).
+     */
+    @Transactional
+    fun leave(userId: Long, groupId: Long) {
+        val membership = requireMember(groupId, userId)
+        val isOwner = membership.role.uppercase() == GroupRole.ADMIN.name
+        if (isOwner) {
+            if (members.countByGroupId(groupId) <= 1L) {
+                delete(userId, groupId)
+                return
+            }
+            throw ResponseStatusException(HttpStatus.CONFLICT, "Transfer ownership before leaving")
+        }
+        val name = users.findSummaryById(userId)?.displayName ?: "user"
+        members.deleteByGroupIdAndUserId(groupId, userId)
+        logActivity(groupId, userId, GroupActivityType.MEMBER_REMOVED, "$name left the group")
+    }
+
     @Transactional
     fun transferOwnership(userId: Long, groupId: Long, req: TransferOwnershipRequest) {
         requireAdmin(groupId, userId)

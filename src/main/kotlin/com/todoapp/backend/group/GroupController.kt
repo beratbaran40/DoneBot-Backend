@@ -51,6 +51,12 @@ class GroupController(
         return BaseResponse.ok()
     }
 
+    @PostMapping("/{groupId}/leave")
+    fun leave(@PathVariable groupId: Long): BaseResponse<Unit> {
+        service.leave(CurrentUser.id(), groupId)
+        return BaseResponse.ok()
+    }
+
     @PutMapping("/{groupId}/transfer-ownership")
     fun transferOwnership(
         @PathVariable groupId: Long,
