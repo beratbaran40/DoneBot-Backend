@@ -1,5 +1,8 @@
 package com.todoapp.backend.chat
 
+import com.google.api.gax.rpc.ApiException
+import com.google.api.gax.rpc.ResourceExhaustedException
+import com.google.api.gax.rpc.StatusCode
 import com.google.cloud.vertexai.api.Content
 import com.google.cloud.vertexai.api.FunctionResponse
 import com.google.cloud.vertexai.api.Part
@@ -10,6 +13,7 @@ import org.springframework.core.io.ClassPathResource
 import org.springframework.http.HttpStatus
 import org.springframework.stereotype.Service
 import org.springframework.web.server.ResponseStatusException
+import java.io.IOException
 import java.nio.charset.StandardCharsets
 import java.time.LocalDate
 
@@ -66,7 +70,28 @@ class ChatService(
         val toolsCalled = mutableListOf<String>()
         repeat(props.maxToolIterations) { iteration ->
             roundTrips++
-            val response = vertex.generate(model, conversation)
+            val response = try {
+                vertex.generate(model, conversation)
+            } catch (e: ResourceExhaustedException) {
+                // Vertex project quota exhausted (429). Distinct from our own per-user ChatRateLimiter.
+                failVertex(
+                    userId, roundTrips, toolsCalled, promptTokens, responseTokens, totalTokens, started, "quota", e,
+                )
+                throw ResponseStatusException(HttpStatus.TOO_MANY_REQUESTS, vertexQuotaMessage(locale))
+            } catch (e: ApiException) {
+                // Timeout / outage / internal / bad-credentials — all degrade to a clean 503 for the user.
+                val cause = classifyVertex(e)
+                failVertex(
+                    userId, roundTrips, toolsCalled, promptTokens, responseTokens, totalTokens, started, cause, e,
+                )
+                throw ResponseStatusException(HttpStatus.SERVICE_UNAVAILABLE, vertexUnavailableMessage(locale))
+            } catch (e: IOException) {
+                // generateContent declares `throws IOException` (transport / credential I/O).
+                failVertex(
+                    userId, roundTrips, toolsCalled, promptTokens, responseTokens, totalTokens, started, "io", e,
+                )
+                throw ResponseStatusException(HttpStatus.SERVICE_UNAVAILABLE, vertexUnavailableMessage(locale))
+            }
             val usage = response.usageMetadata
             promptTokens += usage.promptTokenCount.toLong()
             responseTokens += usage.candidatesTokenCount.toLong()
@@ -166,6 +191,60 @@ class ChatService(
             "Tool loop exceeded ${props.maxToolIterations} iterations",
         )
     }
+
+    /**
+     * Maps a gax [ApiException] to a short, machine-grep-able cause string for the SERVER log only.
+     * The user-facing HTTP status stays coarse (429 for quota, 503 for everything else) — this detail
+     * exists so we can tell a Vertex quota hit apart from bad creds / an outage in Render logs.
+     */
+    private fun classifyVertex(e: ApiException): String = when (e.statusCode.code) {
+        StatusCode.Code.RESOURCE_EXHAUSTED -> "quota"
+        StatusCode.Code.DEADLINE_EXCEEDED -> "timeout"
+        StatusCode.Code.UNAVAILABLE -> "outage"
+        StatusCode.Code.INTERNAL -> "internal"
+        StatusCode.Code.PERMISSION_DENIED, StatusCode.Code.UNAUTHENTICATED -> "credentials"
+        else -> "unknown"
+    }
+
+    /** Records a failed Vertex turn: one ChatCost log line (error=vertex_<cause>) + the real cause server-side. */
+    private fun failVertex(
+        userId: Long,
+        roundTrips: Int,
+        toolsCalled: List<String>,
+        promptTokens: Long,
+        responseTokens: Long,
+        totalTokens: Long,
+        started: Long,
+        cause: String,
+        e: Throwable,
+    ) {
+        logTurn(
+            userId, roundTrips, toolsCalled, promptTokens, responseTokens, totalTokens,
+            System.currentTimeMillis() - started, refused = false, error = "vertex_$cause",
+        )
+        // The true cause (quota vs credentials vs outage) is logged on the server only, never sent to the user.
+        log.error("Vertex generate failed cause={} user={}", cause, userId, e)
+    }
+
+    private fun vertexQuotaMessage(locale: String): String {
+        val human = if (locale == "tr") {
+            "DoneBot şu anda çok yoğun (kota doldu)."
+        } else {
+            "DoneBot is very busy right now (quota reached)."
+        }
+        // The marker contains the substring "quota", which the client's existing RATE_LIMIT_MARKERS already
+        // greps → RATE_LIMITED with zero client change; "Retry in Ns" feeds the client's cooldown regex.
+        return "$human [$VERTEX_QUOTA_MARKER] Retry in ${VERTEX_QUOTA_RETRY_SECONDS}s"
+    }
+
+    private fun vertexUnavailableMessage(locale: String): String =
+        if (locale == "tr") {
+            "DoneBot'un yapay zekâ servisine şu anda ulaşılamıyor. " +
+                "Lütfen birazdan tekrar dene. [$VERTEX_UNAVAILABLE_MARKER]"
+        } else {
+            "DoneBot's AI service is temporarily unavailable. " +
+                "Please try again shortly. [$VERTEX_UNAVAILABLE_MARKER]"
+        }
 
     private fun logTurn(
         userId: Long,
@@ -286,6 +365,12 @@ class ChatService(
     companion object {
         private const val MAX_PREAMBLE_TASKS = 20
         private const val MAX_HISTORY_TURN_CHARS = 4_000
+
+        // Vertex-failure markers embedded in the ResponseStatusException reason so the Android client can
+        // classify the failure off the message text (mirrors the existing rate-limit marker mechanism).
+        private const val VERTEX_QUOTA_MARKER = "vertex_quota"
+        private const val VERTEX_UNAVAILABLE_MARKER = "vertex_unavailable"
+        private const val VERTEX_QUOTA_RETRY_SECONDS = 30
         private val REFUSAL_PREFIXES = listOf(
             "Sorry, I can only help",
             "Üzgünüm, sadece bu uygulamadaki",
