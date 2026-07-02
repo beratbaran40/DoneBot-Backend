@@ -84,8 +84,8 @@ class GroupService(
     @Transactional
     fun delete(userId: Long, groupId: Long) {
         requireAdmin(groupId, userId)
-        members.findAllByGroupId(groupId).forEach { members.delete(it) }
-        tasks.findAllByFamilyGroupId(groupId).forEach { tasks.delete(it) }
+        // ON DELETE CASCADE FKs (V14) remove group_members, group_activities, group_invitations, and the
+        // group's tasks (and via them task_photos / subtasks / daily-completions). Just drop the group row.
         groups.deleteById(groupId)
     }
 

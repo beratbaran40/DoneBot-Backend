@@ -1,15 +1,11 @@
 package com.todoapp.backend.user
 
-import com.todoapp.backend.auth.RefreshTokenRepository
 import com.todoapp.backend.group.GroupMemberRepository
 import com.todoapp.backend.group.GroupRepository
 import com.todoapp.backend.group.GroupRole
 import com.todoapp.backend.group.GroupService
 import com.todoapp.backend.group.TransferOwnershipRequest
-import com.todoapp.backend.notif.DeviceTokenRepository
 import com.todoapp.backend.task.TaskRepository
-import jakarta.persistence.EntityManager
-import jakarta.persistence.PersistenceContext
 import org.slf4j.LoggerFactory
 import org.springframework.http.HttpStatus
 import org.springframework.stereotype.Service
@@ -31,19 +27,16 @@ data class TransferredGroup(
 )
 
 /**
- * Deletes a user account and orchestrates fan-out cleanup:
- *  - Owned groups: ownership transfers to a random member (ADMIN-preferred);
- *    if the user is the only member, the group is deleted entirely.
- *  - Personal tasks, group memberships, device tokens, refresh tokens, and the
- *    user row are deleted in the same transaction.
- *  - Group task assignments held by the user are unassigned (assignedToUserId = null).
- *  - Returns the list of transferred groups so the caller can FCM-notify the new owners
- *    after the transaction commits.
+ * Deletes a user account and orchestrates the parts that can't be a blind DB cascade:
+ *  - Owned groups: ownership transfers to a random member (ADMIN-preferred); if the user is the only
+ *    member, the group is deleted entirely.
+ *  - Personal tasks (owner + no group) are deleted; group tasks the user created stay with the group.
  *
- * Note: rows in tables that don't have a foreign key back to `users` (notifications inbox,
- * user_preferences, group_invitations, group_activities) are left orphaned. They become
- * unreachable once the user row is gone. A separate housekeeping job can sweep them
- * later if needed.
+ * Everything else is removed automatically by the ON DELETE CASCADE / SET NULL foreign keys added in
+ * Flyway V14: deleting the user row cascades group_members, device_tokens, refresh_tokens, notifications,
+ * password_reset_tokens, chat_reports, user_preferences, group_activities and group_invitations, and
+ * unassigns the user from any group tasks (assigned_to_user_id -> NULL). Deleting a group/task cascades
+ * its task_photos. So no rows are left orphaned (§4.20 / §4.19).
  */
 @Service
 class AccountDeletionService(
@@ -51,10 +44,7 @@ class AccountDeletionService(
     private val groups: GroupRepository,
     private val members: GroupMemberRepository,
     private val tasks: TaskRepository,
-    private val deviceTokens: DeviceTokenRepository,
-    private val refreshTokens: RefreshTokenRepository,
     private val groupService: GroupService,
-    @PersistenceContext private val em: EntityManager,
 ) {
     private val log = LoggerFactory.getLogger(AccountDeletionService::class.java)
 
@@ -92,22 +82,11 @@ class AccountDeletionService(
             }
         }
 
-        // Remaining group memberships (where user is just a member, not owner).
-        members.findAllByUserId(userId).forEach { members.delete(it) }
-
-        // Personal tasks (group tasks were handled inside groupService.delete or stay with the group).
+        // Personal tasks only — group tasks the user created stay with the group; their assignment to
+        // this user is dropped to NULL by the assigned_to_user_id SET NULL FK when the user row goes.
         tasks.findAllByOwnerIdAndFamilyGroupIdIsNull(userId).forEach { tasks.delete(it) }
 
-        // Unassign group tasks where this user was the assignee — keep the task, drop the assignment.
-        em.createQuery(
-            "UPDATE TaskEntity t SET t.assignedToUserId = NULL WHERE t.assignedToUserId = :uid",
-        ).setParameter("uid", userId).executeUpdate()
-
-        // Device tokens & refresh tokens.
-        deviceTokens.findAllByUserId(userId).forEach { deviceTokens.delete(it) }
-        refreshTokens.revokeAllByUserId(userId)
-
-        // Final user delete.
+        // The user row: the ON DELETE CASCADE / SET NULL FKs (V14) fan out to every child table.
         users.deleteById(userId)
         log.info("deleteAccount: user=$userId removed (transferred=${transferredGroups.size})")
 
