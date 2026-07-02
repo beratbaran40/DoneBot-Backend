@@ -25,6 +25,8 @@ data class TaskRequest(
     @field:Size(max = 120) val locationName: String? = null,
     @field:Size(max = 500) val locationAddress: String? = null,
     val finishedOn: Long? = null,
+    /** Client-generated idempotency key (UUID) for create dedup; null for old clients. §4.12 */
+    val clientTaskId: String? = null,
     /**
      * Ordered steps of a staged task. `null` = leave existing steps untouched (chat's
      * updateTask and non-staged clients send null); a list = reconcile the step set
@@ -71,6 +73,8 @@ data class TaskData(
     val locationName: String? = null,
     val locationAddress: String? = null,
     val finishedOn: Long? = null,
+    /** Echoed back so the client can reconcile a PENDING_CREATE row to its server row by exact key. §4.12 */
+    val clientTaskId: String? = null,
     val photoUrls: List<String> = emptyList(),
     /** Ordered steps of a staged task. Empty for a plain task. */
     val subtasks: List<SubtaskData> = emptyList(),

@@ -4,6 +4,7 @@ import com.todoapp.backend.group.GroupMemberRepository
 import com.todoapp.backend.notif.NotificationPublisher
 import com.todoapp.backend.notif.inbox.NotificationType
 import com.todoapp.backend.user.UserRepository
+import org.springframework.dao.DataIntegrityViolationException
 import org.springframework.http.HttpStatus
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
@@ -21,11 +22,18 @@ class TaskService(
 ) {
     @Transactional
     fun create(ownerId: Long, req: TaskRequest): TaskData {
+        // §4.12: a retried sync POST (lost response) must not create a second task. Pre-check is the
+        // primary fix — SyncWorker retries are sequential (same device), so the earlier insert is
+        // already committed and visible here; return it unchanged.
+        req.clientTaskId?.let { key ->
+            tasks.findByOwnerIdAndClientTaskId(ownerId, key)?.let { return it.toData() }
+        }
         val category = req.category ?: TaskCategory.PERSONAL
         // AUTH: bir gruba görev ekleyebilmek için o grubun üyesi olmalısın (yazma tarafı IDOR — §4.8 denetimi).
         req.familyGroupId?.let { requireGroupMembership(ownerId, it) }
         val entity = TaskEntity(
             ownerId = ownerId,
+            clientTaskId = req.clientTaskId,
             title = req.title,
             description = req.description,
             date = req.date,
@@ -47,7 +55,15 @@ class TaskService(
             locationAddress = req.locationAddress?.takeIf { it.isNotBlank() },
             finishedOn = req.finishedOn,
         )
-        val saved = tasks.save(entity)
+        val saved = try {
+            // saveAndFlush so a unique-index violation surfaces HERE (inside the try), not later at commit.
+            tasks.saveAndFlush(entity)
+        } catch (e: DataIntegrityViolationException) {
+            // Genuine concurrent double-submit of the same key (both passed the pre-check): the unique
+            // index rejects the loser. Surface a clean 409 — the client retries, by then the winning row
+            // is SYNCED so nothing is re-sent, and the index guarantees no duplicate ever persists.
+            throw ResponseStatusException(HttpStatus.CONFLICT, "duplicate clientTaskId")
+        }
         req.subtasks?.let { reconcileSubtasks(saved.id, it) }
         notifyAssignmentIfNeeded(
             actorId = ownerId,
@@ -244,6 +260,7 @@ class TaskService(
             locationName = locationName,
             locationAddress = locationAddress,
             finishedOn = finishedOn,
+            clientTaskId = clientTaskId,
             photoUrls = urls,
             subtasks = subtaskRepo.findAllByTaskIdOrderByOrderIndexAsc(id).map {
                 SubtaskData(id = it.id, title = it.title, isCompleted = it.isCompleted, orderIndex = it.orderIndex)

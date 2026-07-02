@@ -27,6 +27,13 @@ class TaskEntity(
     @Column(nullable = false)
     var ownerId: Long,
 
+    /**
+     * Client-generated idempotency key (UUID) so a retried create dedups instead of inserting a
+     * duplicate; null for legacy rows and old clients. Unique per owner via idx_tasks_owner_client. §4.12
+     */
+    @Column(name = "client_task_id", length = 36)
+    var clientTaskId: String? = null,
+
     @Column(nullable = false)
     var title: String,
 

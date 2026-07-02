@@ -9,6 +9,9 @@ interface TaskRepository : JpaRepository<TaskEntity, Long> {
     fun findAllByOwnerIdAndFamilyGroupIdIsNull(ownerId: Long): List<TaskEntity>
     fun findAllByFamilyGroupId(groupId: Long): List<TaskEntity>
 
+    /** §4.12 idempotency: return the existing task for a client-generated key so a retried create dedups. */
+    fun findByOwnerIdAndClientTaskId(ownerId: Long, clientTaskId: String): TaskEntity?
+
     fun findFirst5ByOwnerIdAndFamilyGroupIdIsNullAndTitleContainingIgnoreCaseOrderByDateAsc(
         ownerId: Long,
         titleFragment: String,
