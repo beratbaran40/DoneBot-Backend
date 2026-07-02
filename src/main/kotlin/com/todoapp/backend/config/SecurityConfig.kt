@@ -50,6 +50,8 @@ class SecurityConfig {
                         "/legal/**",
                         "/index.html",
                         "/assets/**",
+                        // Digital Asset Links for https App Link verification (reset-password deep link).
+                        "/.well-known/**",
                     ).permitAll()
                     .requestMatchers(org.springframework.http.HttpMethod.GET, "/users/*/avatar").permitAll()
                 // Open Swagger UI + OpenAPI JSON only when springdoc actually serves them (dev). In prod
