@@ -108,6 +108,22 @@ class AuthService(
         return RefreshTokenData(pair.accessToken, pair.refreshToken, pair.expiresIn)
     }
 
+    /**
+     * Server-side sign-out: revoke the caller's refresh token so it can never mint another access
+     * token. Idempotent — an unknown or already-revoked token is a no-op (still 200), so a client
+     * logging out with a stale/rotated token still succeeds. Access JWTs stay valid until their short
+     * TTL expires; killing them instantly would need a blocklist, which we intentionally don't add.
+     */
+    @Transactional
+    fun logout(req: RefreshTokenRequest) {
+        val hash = sha256(req.refreshToken)
+        val record = refreshTokens.findByTokenHash(hash) ?: return
+        if (!record.revoked) {
+            record.revoked = true
+            refreshTokens.save(record)
+        }
+    }
+
     @Transactional
     fun forgotPassword(req: ForgotPasswordRequest) {
         val creds = users.findCredentialsByEmail(req.email.trim())

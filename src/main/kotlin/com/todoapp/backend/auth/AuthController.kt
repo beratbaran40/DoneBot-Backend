@@ -41,6 +41,12 @@ class AuthController(
     fun refresh(@Valid @RequestBody req: RefreshTokenRequest): BaseResponse<RefreshTokenData> =
         BaseResponse.ok(authService.refresh(req))
 
+    @PostMapping("/logout")
+    fun logout(@Valid @RequestBody req: RefreshTokenRequest): BaseResponse<Unit> {
+        authService.logout(req)
+        return BaseResponse.ok(Unit)
+    }
+
     @PostMapping("/google")
     fun google(@Valid @RequestBody req: OAuthTokenRequest): BaseResponse<AuthResponseData> =
         BaseResponse.ok(authService.googleLogin(req))
