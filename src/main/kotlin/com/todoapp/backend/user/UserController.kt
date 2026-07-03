@@ -3,6 +3,7 @@ package com.todoapp.backend.user
 import com.todoapp.backend.auth.RefreshTokenRepository
 import com.todoapp.backend.common.BaseResponse
 import com.todoapp.backend.common.CurrentUser
+import com.todoapp.backend.common.ImageSanitizer
 import com.todoapp.backend.notif.NotificationPublisher
 import com.todoapp.backend.notif.inbox.NotificationType
 import jakarta.validation.Valid
@@ -107,18 +108,17 @@ class UserController(
         if (file.isEmpty) {
             throw ResponseStatusException(HttpStatus.BAD_REQUEST, "Empty file")
         }
-        val contentType = file.contentType ?: "application/octet-stream"
-        if (!contentType.startsWith("image/")) {
-            throw ResponseStatusException(HttpStatus.BAD_REQUEST, "File must be an image")
-        }
         if (file.size > MAX_AVATAR_BYTES) {
             throw ResponseStatusException(HttpStatus.PAYLOAD_TOO_LARGE, "Image too large (max 2MB)")
         }
+        // Re-encode to a safe raster (rejects svg/gif/non-image) so the public avatar GET can never
+        // serve back an executable content-type.
+        val sanitized = ImageSanitizer.sanitize(file)
         val user = users.findById(CurrentUser.id()).orElseThrow {
             ResponseStatusException(HttpStatus.NOT_FOUND, "User not found")
         }
-        user.avatarBytes = file.bytes
-        user.avatarContentType = contentType
+        user.avatarBytes = sanitized.bytes
+        user.avatarContentType = sanitized.contentType
         return BaseResponse.ok(users.save(user).toDto())
     }
 

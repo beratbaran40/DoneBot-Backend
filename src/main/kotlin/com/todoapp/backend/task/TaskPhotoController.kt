@@ -2,6 +2,7 @@ package com.todoapp.backend.task
 
 import com.todoapp.backend.common.BaseResponse
 import com.todoapp.backend.common.CurrentUser
+import com.todoapp.backend.common.ImageSanitizer
 import com.todoapp.backend.group.GroupMemberRepository
 import org.springframework.http.HttpStatus
 import org.springframework.http.MediaType
@@ -35,18 +36,15 @@ class TaskPhotoController(
     ): BaseResponse<TaskPhotoData> {
         val task = requireAccessibleTask(taskId)
         if (file.isEmpty) throw ResponseStatusException(HttpStatus.BAD_REQUEST, "Empty file")
-        val contentType = file.contentType ?: "application/octet-stream"
-        if (!contentType.startsWith("image/")) {
-            throw ResponseStatusException(HttpStatus.BAD_REQUEST, "File must be an image")
-        }
         if (file.size > MAX_PHOTO_BYTES) {
             throw ResponseStatusException(HttpStatus.PAYLOAD_TOO_LARGE, "Image too large (max 5MB)")
         }
         if (photos.countByTaskId(task.id) >= MAX_PHOTOS_PER_TASK) {
             throw ResponseStatusException(HttpStatus.CONFLICT, "Max $MAX_PHOTOS_PER_TASK photos per task")
         }
+        val sanitized = ImageSanitizer.sanitize(file)
         val saved = photos.save(
-            TaskPhotoEntity(taskId = task.id, bytes = file.bytes, contentType = contentType)
+            TaskPhotoEntity(taskId = task.id, bytes = sanitized.bytes, contentType = sanitized.contentType),
         )
         return BaseResponse.ok(saved.toDto())
     }

@@ -146,12 +146,11 @@ class GroupService(
     fun uploadAvatar(callerId: Long, groupId: Long, file: org.springframework.web.multipart.MultipartFile): GroupData {
         requireAdmin(groupId, callerId)
         if (file.isEmpty) throw ResponseStatusException(HttpStatus.BAD_REQUEST, "Empty file")
-        val ct = file.contentType ?: "application/octet-stream"
-        if (!ct.startsWith("image/")) throw ResponseStatusException(HttpStatus.BAD_REQUEST, "File must be an image")
         if (file.size > 2L * 1024 * 1024) throw ResponseStatusException(HttpStatus.PAYLOAD_TOO_LARGE, "Image too large (max 2MB)")
+        val sanitized = com.todoapp.backend.common.ImageSanitizer.sanitize(file)
         val group = groups.findById(groupId).orElseThrow { ResponseStatusException(HttpStatus.NOT_FOUND, "Group not found") }
-        group.avatarBytes = file.bytes
-        group.avatarContentType = ct
+        group.avatarBytes = sanitized.bytes
+        group.avatarContentType = sanitized.contentType
         group.updatedAt = Instant.now()
         return groups.save(group).toData()
     }
