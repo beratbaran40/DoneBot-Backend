@@ -5,8 +5,8 @@ import jakarta.validation.constraints.Size
 
 data class TaskRequest(
     val id: Long? = null,
-    @field:NotBlank val title: String,
-    val description: String? = null,
+    @field:NotBlank @field:Size(max = 255) val title: String,
+    @field:Size(max = 2000) val description: String? = null,
     val date: Long,
     val timeStart: Long,
     val timeEnd: Long,

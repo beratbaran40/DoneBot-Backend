@@ -6,13 +6,13 @@ import com.todoapp.backend.notif.inbox.NotificationType
 import com.todoapp.backend.task.TaskEntity
 import com.todoapp.backend.task.TaskRepository
 import org.slf4j.LoggerFactory
+import org.springframework.beans.factory.annotation.Value
 import org.springframework.scheduling.annotation.Scheduled
 import org.springframework.stereotype.Component
 import org.springframework.transaction.annotation.Transactional
 import java.time.Instant
 import java.time.LocalDate
 import java.time.ZoneId
-import java.time.ZoneOffset
 
 /**
  * Polls every 5 minutes for group tasks whose due time falls within the next 20 minutes and sends
@@ -24,9 +24,15 @@ class TaskDueSoonJob(
     private val tasks: TaskRepository,
     private val groups: GroupRepository,
     private val publisher: NotificationPublisher,
+    // No per-user timezone exists yet, so due-soon comparisons use a single configurable zone.
+    // Defaults to the primary market (Türkiye, fixed UTC+3, no DST). A naive UTC comparison would
+    // fire group-task reminders offset by the assignee's UTC offset. Per-assignee zones are a
+    // follow-up (store the assignee's IANA zone → use it here). Personal-task reminders are
+    // unaffected — those are client-local exact alarms scheduled in the device's own zone.
+    @Value("\${app.default-timezone:Europe/Istanbul}") defaultZone: String,
 ) {
     private val log = LoggerFactory.getLogger(TaskDueSoonJob::class.java)
-    private val zone: ZoneId = ZoneOffset.UTC
+    private val zone: ZoneId = ZoneId.of(defaultZone)
 
     @Scheduled(fixedDelayString = "\${app.scheduling.due-soon-interval-ms:300000}", initialDelay = 60000)
     @Transactional
