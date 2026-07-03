@@ -34,6 +34,12 @@ class SecurityConfig {
         http
             .csrf { it.disable() }
             .sessionManagement { it.sessionCreationPolicy(SessionCreationPolicy.STATELESS) }
+            // CORS is intentionally NOT configured (§4.22). The only client is the native Android app,
+            // which sends no browser Origin — with no CorsConfigurationSource, Spring emits no
+            // Access-Control-Allow-Origin and browsers block any cross-origin read: secure-by-default.
+            // If a web panel is ever added, register an explicit CorsConfigurationSource with a fixed
+            // origin allowlist. NEVER combine allowedOrigins("*") with allowCredentials(true) — that lets
+            // ANY origin make credentialed requests (a critical account-takeover vector).
             .authorizeHttpRequests { auth ->
                 auth
                     .requestMatchers(
