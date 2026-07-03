@@ -25,4 +25,6 @@ COPY --from=build /workspace/build/libs/*.jar app.jar
 
 ENV SPRING_PROFILES_ACTIVE=prod
 EXPOSE 8080
-ENTRYPOINT ["java","-jar","/app/app.jar"]
+# -XX:MaxRAMPercentage caps the heap at 75% of the container memory limit (Render enforces a hard
+# cgroup limit). Without it the JVM's default ergonomics can over-commit the heap and get OOM-killed.
+ENTRYPOINT ["java","-XX:MaxRAMPercentage=75.0","-jar","/app/app.jar"]
