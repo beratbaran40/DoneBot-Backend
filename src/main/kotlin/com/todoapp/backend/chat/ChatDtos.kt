@@ -1,5 +1,6 @@
 package com.todoapp.backend.chat
 
+import jakarta.validation.Valid
 import jakarta.validation.constraints.NotBlank
 import jakarta.validation.constraints.Pattern
 import jakarta.validation.constraints.Size
@@ -15,10 +16,13 @@ data class ChatMessageRequest(
     val locale: String? = null,
 
     /** Last N turns the client wants the model to see. The server will trim further. */
+    @field:Size(max = MAX_HISTORY_TURNS)
+    @field:Valid
     val history: List<ChatHistoryTurn> = emptyList(),
 ) {
     companion object {
         const val MAX_PROMPT_LENGTH = 1000
+        const val MAX_HISTORY_TURNS = 10
     }
 }
 
@@ -42,8 +46,13 @@ data class ChatReportRequest(
 data class ChatHistoryTurn(
     /** "user" or "assistant" — anything else is ignored. */
     val role: String,
+    @field:Size(max = MAX_CONTENT_LENGTH)
     val content: String,
-)
+) {
+    companion object {
+        const val MAX_CONTENT_LENGTH = 4000
+    }
+}
 
 /** Outbound payload from the chat endpoint. */
 data class ChatMessageResponse(
