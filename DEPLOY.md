@@ -74,4 +74,19 @@ Build a release APK (`./gradlew assembleRelease`), sideload, register/login → 
 
 - Render's free tier spins the service down after 15 min of inactivity; first request after wake takes ~30s. Fine for dev/demo, not for production traffic.
 - Neon's free tier has a 0.5GB storage limit and pauses idle databases after a while (auto-resumes on connect). Both are fine for a small group app.
-- Database migrations: we use `spring.jpa.hibernate.ddl-auto=update` for now (Hibernate auto-syncs schema). For real production, switch to Flyway or Liquibase before you have users.
+- Database migrations: managed by **Flyway** (`db/migration/{h2,postgresql}`); prod runs `ddl-auto=validate`, so Hibernate validates the Flyway-built schema and never mutates it.
+
+## Production hardening notes
+
+### Run exactly ONE backend instance (§4.17)
+The `@Scheduled` jobs (`TaskDueSoonJob`, `NotificationRetentionJob`) have **no distributed lock**, so 2+ instances would double-fire due-soon notifications and double-run retention deletes. Keep Render at a **single instance**. To scale horizontally later, add ShedLock (JDBC provider + a `shedlock` Flyway table + `@SchedulerLock` on each job) FIRST. Pairs with the launch-eve `APP_SCHEDULING_DUE_SOON_INTERVAL_MS` requirement (§9.1).
+
+### Enable automated dependency CVE scanning (§4.7)
+Zero-code, once per repo (client **and** backend) on GitHub:
+**Settings → Code security → Dependabot → enable "Dependabot alerts" + "Dependabot security updates".**
+New CVEs then arrive as alerts/PRs. Clear critical/high before each release; suppress the rest with a documented reason. (A CI-run OWASP `dependency-check-gradle` scan is an optional heavier alternative — it needs an NVD API key; fold into CI, §6.15.)
+
+### Already wired — don't drop these on a future deploy change
+- **Graceful shutdown** + 25s drain (`server.shutdown=graceful`) and a heap cap (`-XX:MaxRAMPercentage=75.0` in the Dockerfile) — §4.13/§4.14.
+- **Metrics:** `/actuator/prometheus` is exposed but **auth-gated** (behind a JWT via `anyRequest().authenticated()`). Never add it to SecurityConfig's permitAll list — §4.18.
+- **Correlation id:** every response carries `X-Request-Id` and each log line is stamped `%X{requestId}` — grep prod logs by that id — §4.17.
