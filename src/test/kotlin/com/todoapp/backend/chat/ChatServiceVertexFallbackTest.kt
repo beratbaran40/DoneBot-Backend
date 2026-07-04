@@ -2,6 +2,8 @@ package com.todoapp.backend.chat
 
 import com.google.api.gax.grpc.GrpcStatusCode
 import com.google.api.gax.rpc.ApiExceptionFactory
+import com.google.cloud.vertexai.api.Candidate
+import com.google.cloud.vertexai.api.GenerateContentResponse
 import com.google.cloud.vertexai.generativeai.GenerativeModel
 import com.todoapp.backend.task.TaskRepository
 import com.todoapp.backend.user.UserRepository
@@ -82,6 +84,19 @@ class ChatServiceVertexFallbackTest {
 
         assertThat(ex.statusCode).isEqualTo(HttpStatus.SERVICE_UNAVAILABLE)
         assertThat(ex.reason).contains("vertex_unavailable")
+    }
+
+    @Test
+    fun `a safety-blocked candidate returns a localized refusal, not a 502`() {
+        val blocked = GenerateContentResponse.newBuilder()
+            .addCandidates(Candidate.newBuilder().setFinishReason(Candidate.FinishReason.SAFETY).build())
+            .build()
+        given(vertex.generate(any(), any())).willReturn(blocked)
+
+        val result = service.reply(USER_ID, request())
+
+        assertThat(result.meta.refused).isTrue()
+        assertThat(result.text).isNotBlank()
     }
 
     private fun stubGenerateToThrow(t: Throwable) {

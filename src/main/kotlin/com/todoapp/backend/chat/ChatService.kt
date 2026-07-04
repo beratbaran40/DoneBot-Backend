@@ -3,6 +3,7 @@ package com.todoapp.backend.chat
 import com.google.api.gax.rpc.ApiException
 import com.google.api.gax.rpc.ResourceExhaustedException
 import com.google.api.gax.rpc.StatusCode
+import com.google.cloud.vertexai.api.Candidate
 import com.google.cloud.vertexai.api.Content
 import com.google.cloud.vertexai.api.FunctionResponse
 import com.google.cloud.vertexai.api.Part
@@ -102,6 +103,20 @@ class ChatService(
                     System.currentTimeMillis() - started, refused = false, error = "empty_response",
                 )
                 throw ResponseStatusException(HttpStatus.BAD_GATEWAY, "Empty response from model")
+            }
+            // §7.15: a safety/recitation/blocklist stop leaves an empty candidate. Return a clean,
+            // localized refusal (HTTP 200) instead of collapsing into the meaningless "empty_text" 502.
+            if (candidate.finishReason in blockedFinishReasons) {
+                val ms = System.currentTimeMillis() - started
+                logTurn(
+                    userId, roundTrips, toolsCalled, promptTokens, responseTokens, totalTokens,
+                    ms, refused = true, error = "safety_block",
+                )
+                tracker.record(userId)
+                return ChatMessageResponse(
+                    text = safetyRefusalMessage(locale),
+                    meta = ChatTurnMeta(roundTrips = roundTrips, refused = true, serverMs = ms),
+                )
             }
             val parts = candidate.content.partsList
 
@@ -245,6 +260,19 @@ class ChatService(
             "DoneBot's AI service is temporarily unavailable. " +
                 "Please try again shortly. [$VERTEX_UNAVAILABLE_MARKER]"
         }
+
+    // §7.15: finishReasons that mean "the model refused/was blocked" — we rely on Gemini's default
+    // BLOCK_MEDIUM_AND_ABOVE thresholds (no explicit SafetySettings) and turn these into a polite refusal.
+    private val blockedFinishReasons = setOf(
+        Candidate.FinishReason.SAFETY,
+        Candidate.FinishReason.RECITATION,
+        Candidate.FinishReason.BLOCKLIST,
+        Candidate.FinishReason.PROHIBITED_CONTENT,
+        Candidate.FinishReason.SPII,
+    )
+
+    private fun safetyRefusalMessage(locale: String): String =
+        if (locale == "tr") "Bu isteğe yanıt veremiyorum." else "I can't respond to that request."
 
     private fun logTurn(
         userId: Long,
