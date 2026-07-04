@@ -291,7 +291,7 @@ class ChatService(
         val todayEpoch = today.toEpochDay()
         val tomorrowEpoch = today.plusDays(1).toEpochDay()
         val weekAgoEpoch = todayEpoch - 6
-        val tasks = taskRepo.findAllByOwnerIdAndFamilyGroupIdIsNull(userId)
+        val tasks = taskRepo.findAllByOwnerIdAndFamilyGroupIdIsNull(userId).filterNot { it.isSecret }
         val tasksToday = tasks.filter { it.date == todayEpoch }
         val tomorrowCount = tasks.count { it.date == tomorrowEpoch }
         val overdueCount = tasks.count { !it.isCompleted && it.date < todayEpoch }

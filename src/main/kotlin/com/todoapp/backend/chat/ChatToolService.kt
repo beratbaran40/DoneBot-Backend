@@ -74,19 +74,24 @@ class ChatToolService(
 
     // -------------------- Read tools --------------------
 
+    // §7.14: the chat/Vertex layer must never see biometric-protected (isSecret) personal tasks —
+    // their titles and locations would otherwise be sent to Google. Every personal-task read goes here.
+    private fun visiblePersonalTasks(userId: Long): List<TaskEntity> =
+        taskRepo.findAllByOwnerIdAndFamilyGroupIdIsNull(userId).filterNot { it.isSecret }
+
     private fun runGetCurrentDate(): Value =
         objectValue("date" to stringValue(LocalDate.now().toString()))
 
     private fun runGetTodaysTasks(userId: Long): Value {
         val today = LocalDate.now()
-        val tasks = taskRepo.findAllByOwnerIdAndFamilyGroupIdIsNull(userId)
+        val tasks = visiblePersonalTasks(userId)
             .filter { it.date == today.toEpochDay() }
         return tasksPayload(tasks)
     }
 
     private fun runGetOverdueTasks(userId: Long): Value {
         val today = LocalDate.now().toEpochDay()
-        val overdue = taskRepo.findAllByOwnerIdAndFamilyGroupIdIsNull(userId)
+        val overdue = visiblePersonalTasks(userId)
             .filter { !it.isCompleted && it.date < today }
         return tasksPayload(overdue)
     }
@@ -96,7 +101,7 @@ class ChatToolService(
         val end = LocalDate.parse(args.fields["endDate"]?.stringValue.orEmpty())
         val s = start.toEpochDay()
         val e = end.toEpochDay()
-        val tasks = taskRepo.findAllByOwnerIdAndFamilyGroupIdIsNull(userId)
+        val tasks = visiblePersonalTasks(userId)
             .filter { it.date in s..e }
         return tasksPayload(tasks)
     }
@@ -118,7 +123,7 @@ class ChatToolService(
     private fun runGetCompletedTasksThisWeek(userId: Long): Value {
         val today = LocalDate.now().toEpochDay()
         val weekAgo = today - 6  // last 7 days inclusive
-        val count = taskRepo.findAllByOwnerIdAndFamilyGroupIdIsNull(userId)
+        val count = visiblePersonalTasks(userId)
             .count { it.isCompleted && it.date in weekAgo..today }
         return objectValue("count" to longValue(count.toLong()))
     }
@@ -129,6 +134,7 @@ class ChatToolService(
         }
         val tasks = taskRepo
             .findFirst5ByOwnerIdAndFamilyGroupIdIsNullAndTitleContainingIgnoreCaseOrderByDateAsc(userId, query)
+            .filterNot { it.isSecret }
         // Include steps (with their stepIds) so the model can chain into addStep / renameStep /
         // setStepCompletion / deleteStep when the user references a staged task by name.
         return objectValue(
@@ -146,7 +152,7 @@ class ChatToolService(
             "all" -> Long.MIN_VALUE
             else -> today.minusDays(WEEK_LOOKBACK_DAYS).toEpochDay()
         }
-        val all = taskRepo.findAllByOwnerIdAndFamilyGroupIdIsNull(userId)
+        val all = visiblePersonalTasks(userId)
         val inRange = all.filter { it.date in startEpoch..todayEpoch }
         val completedInRange = inRange.count { it.isCompleted }
         val totalInRange = inRange.size
