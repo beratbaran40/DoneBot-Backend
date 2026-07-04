@@ -23,4 +23,9 @@ data class ChatProperties(
     val rateLimitPerMinute: Int = 30,
     /** Per-user request cap in any 24h window. Soft daily ceiling. */
     val rateLimitPerDay: Int = 500,
+    /**
+     * Global (all-users) daily request ceiling — a coarse cost circuit-breaker (§4.10). Per-user
+     * limits cap individuals but not total Vertex spend; over this, all chat degrades to 503.
+     */
+    val maxGlobalDailyRequests: Int = 5000,
 )

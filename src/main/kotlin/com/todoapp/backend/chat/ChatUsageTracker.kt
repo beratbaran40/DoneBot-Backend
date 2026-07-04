@@ -2,8 +2,11 @@ package com.todoapp.backend.chat
 
 import org.slf4j.LoggerFactory
 import org.springframework.stereotype.Component
+import java.time.LocalDate
+import java.time.ZoneOffset
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.atomic.AtomicLong
+import java.util.concurrent.atomic.AtomicReference
 
 /**
  * Per-user request counter for the chat endpoint. In-memory only — no Redis,
@@ -25,6 +28,26 @@ class ChatUsageTracker {
         if (total % LOG_EVERY == 0L) {
             log.info("ChatUsage user={} totalRequests={}", userId, total)
         }
+    }
+
+    private val globalDay = AtomicReference(LocalDate.now(ZoneOffset.UTC))
+    private val globalDailyCount = AtomicLong(0L)
+
+    /**
+     * Global (all-users) daily request gate for cost control (§4.10). Resets at UTC midnight.
+     * Increments the counter and returns true while within [limit], false once the ceiling is hit.
+     * A tiny undercount is possible exactly at the day boundary — fine for a coarse circuit-breaker.
+     */
+    fun tryAcquireGlobalDaily(limit: Int): Boolean {
+        val today = LocalDate.now(ZoneOffset.UTC)
+        if (globalDay.getAndSet(today) != today) {
+            globalDailyCount.set(0L)
+        }
+        val count = globalDailyCount.incrementAndGet()
+        if (count % LOG_EVERY == 0L) {
+            log.info("ChatUsage GLOBAL dailyRequests={} limit={}", count, limit)
+        }
+        return count <= limit
     }
 
     companion object {

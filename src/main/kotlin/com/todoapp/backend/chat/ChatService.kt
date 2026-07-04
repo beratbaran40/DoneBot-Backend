@@ -56,6 +56,15 @@ class ChatService(
 
         val started = System.currentTimeMillis()
         val locale = (request.locale ?: "en").lowercase()
+
+        // §4.10: global (all-users) daily ceiling — a coarse circuit-breaker against a runaway Vertex
+        // bill (per-user rate-limit caps individuals, not total spend). Over the cap → 503 with the
+        // same marker the client already renders as a "service busy" banner (§7.13).
+        if (!tracker.tryAcquireGlobalDaily(props.maxGlobalDailyRequests)) {
+            log.warn("ChatGlobalCap hit — rejecting chat user={} limit={}", userId, props.maxGlobalDailyRequests)
+            throw ResponseStatusException(HttpStatus.SERVICE_UNAVAILABLE, vertexUnavailableMessage(locale))
+        }
+
         val systemInstruction = if (locale == "tr") systemInstructionTr else systemInstructionEn
         val model = vertex.model(systemInstruction)
 

@@ -14,6 +14,7 @@ import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.assertThrows
 import org.mockito.BDDMockito.given
 import org.mockito.Mockito
+import org.mockito.Mockito.anyInt
 import org.mockito.Mockito.anyLong
 import org.mockito.Mockito.anyString
 import org.springframework.http.HttpStatus
@@ -43,6 +44,7 @@ class ChatServiceVertexFallbackTest {
         given(vertex.isReady).willReturn(true)
         given(vertex.model(anyString())).willReturn(Mockito.mock(GenerativeModel::class.java))
         given(taskRepo.findAllByOwnerIdAndFamilyGroupIdIsNull(anyLong())).willReturn(emptyList())
+        given(tracker.tryAcquireGlobalDaily(anyInt())).willReturn(true)
     }
 
     @Test
@@ -97,6 +99,16 @@ class ChatServiceVertexFallbackTest {
 
         assertThat(result.meta.refused).isTrue()
         assertThat(result.text).isNotBlank()
+    }
+
+    @Test
+    fun `global daily cap returns 503 with the unavailable marker`() {
+        given(tracker.tryAcquireGlobalDaily(anyInt())).willReturn(false)
+
+        val ex = assertThrows<ResponseStatusException> { service.reply(USER_ID, request()) }
+
+        assertThat(ex.statusCode).isEqualTo(HttpStatus.SERVICE_UNAVAILABLE)
+        assertThat(ex.reason).contains("vertex_unavailable")
     }
 
     private fun stubGenerateToThrow(t: Throwable) {
