@@ -18,6 +18,7 @@ class GroupController(
     private val service: GroupService,
     private val taskService: GroupTaskService,
     private val activityService: GroupActivityService,
+    private val contentReportService: ContentReportService,
 ) {
     @PostMapping
     fun create(@Valid @RequestBody req: CreateGroupRequest): BaseResponse<GroupData> =
@@ -49,6 +50,22 @@ class GroupController(
     fun removeMember(@PathVariable groupId: Long, @PathVariable userId: Long): BaseResponse<Unit> {
         service.removeMember(CurrentUser.id(), groupId, userId)
         return BaseResponse.ok()
+    }
+
+    /**
+     * Records a report of offensive/inappropriate content (member, photo, or task) in [groupId] for
+     * manual moderation review. Required by Google Play's UGC policy. Only group members may report,
+     * enforced via [GroupService.requireMember] (IDOR guard).
+     */
+    @PostMapping("/{groupId}/reports")
+    fun reportContent(
+        @PathVariable groupId: Long,
+        @Valid @RequestBody req: ReportContentRequest,
+    ): BaseResponse<Unit> {
+        val callerId = CurrentUser.id()
+        service.requireMember(groupId, callerId)
+        contentReportService.record(callerId, groupId, req)
+        return BaseResponse.ok("Report received")
     }
 
     @PostMapping("/{groupId}/leave")

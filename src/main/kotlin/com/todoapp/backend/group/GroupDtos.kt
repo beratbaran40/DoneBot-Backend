@@ -23,6 +23,19 @@ data class TransferOwnershipRequest(
     val userId: Long,
 )
 
+/**
+ * A user report of offensive/inappropriate group content: a member (`targetType = MEMBER`,
+ * `targetUserId` set), a shared task photo, or a task (`targetType = PHOTO`/`TASK`, `targetRef` set).
+ * Backs the in-app "Report" action required by Google Play's UGC policy; recorded server-side for
+ * manual moderation review. Blocking a user is handled client-side.
+ */
+data class ReportContentRequest(
+    @field:NotBlank val targetType: String,
+    val targetUserId: Long? = null,
+    @field:jakarta.validation.constraints.Size(max = 512) val targetRef: String? = null,
+    @field:jakarta.validation.constraints.Size(max = 500) val reason: String? = null,
+)
+
 data class GroupMemberData(
     val userId: Long,
     val displayName: String,
