@@ -322,7 +322,7 @@
 <!-- ======================== ENGLISH ======================== -->
 <section data-lang="en" class="active">
     <h1>Privacy Policy</h1>
-    <p class="updated">Last updated: 2026-04-30</p>
+    <p class="updated">Last updated: 2026-07-05</p>
 
     <p>This Privacy Policy describes how DoneBot ("we", "our", "us") collects, uses, and shares information when you use the DoneBot mobile application (the "App").</p>
 
@@ -331,9 +331,9 @@
         <ul>
             <li><strong>Account information</strong>: email address, display name, profile avatar, authentication tokens.</li>
             <li><strong>Tasks &amp; groups</strong>: titles, descriptions, dates, recurrence settings, completion status, group memberships, and roles you assign.</li>
-            <li><strong>Chat with DoneBot (AI assistant)</strong>: messages you send to the in-app DoneBot assistant are sent to Google&rsquo;s Gemini API for processing. Conversation history is stored locally on your device and on our backend for chat continuity.</li>
-            <li><strong>Device &amp; push tokens</strong>: Firebase Cloud Messaging tokens, device identifiers, and app version.</li>
-            <li><strong>Diagnostic data</strong>: Firebase Crashlytics crash reports and Firebase Analytics usage events. You can opt out from app settings (when available).</li>
+            <li><strong>Chat with DoneBot (AI assistant)</strong>: messages you send to the in-app DoneBot assistant are sent to Google Vertex AI (Gemini) for processing. Your conversation history is stored only on your device &mdash; our server is stateless and does not keep your chats. The only exception is an AI reply you explicitly <em>report</em>, which is stored on our server for safety review.</li>
+            <li><strong>Device &amp; push tokens</strong>: a Firebase Cloud Messaging token, a randomly generated device identifier (not a hardware or advertising ID), device model, and app version. DoneBot uses no advertising ID.</li>
+            <li><strong>Diagnostic data</strong>: Firebase Crashlytics crash reports. Analytics and performance monitoring are bundled but collection is off by default; you can enable or disable them from app settings.</li>
         </ul>
     </div>
 
@@ -348,29 +348,37 @@
     </div>
 
     <div class="card-group">
-        <h2>3. Sharing</h2>
+        <h2>3. Sharing &amp; international transfer</h2>
         <p>We share data only with:</p>
         <ul>
             <li><strong>Group members</strong>: tasks, comments, and activity within a group are visible to all members of that group.</li>
-            <li><strong>Service providers</strong>: Google Firebase (auth, FCM, Crashlytics, Analytics, AI Logic), Render (backend hosting), and standard infrastructure subprocessors.</li>
+            <li><strong>Google Vertex AI (Gemini)</strong>, region <code>us-central1</code> (United States): when you use DoneBot chat, your message and a short task-context summary are sent for processing. Tasks you mark as <em>secret</em> are excluded. Input is not used to train Google&rsquo;s models per Vertex AI terms.</li>
+            <li><strong>Google Firebase</strong>: push delivery (FCM) and crash diagnostics (Crashlytics), acting as our processor.</li>
+            <li><strong>Infrastructure providers</strong>: Render (backend hosting) and Neon (database), acting as processors.</li>
         </ul>
-        <p>We do not sell your personal data.</p>
+        <p>Using DoneBot chat therefore involves transferring that chat data to servers in the United States. We do not sell your personal data.</p>
     </div>
 
     <div class="card-group">
         <h2>4. Data retention &amp; deletion</h2>
-        <p>You can delete your account at any time from <em>Settings &rarr; Account &rarr; Delete Account</em>. When you do:</p>
+        <p>We keep your data only as long as needed:</p>
         <ul>
-            <li>All your personal tasks, chat messages, group memberships, and device tokens are deleted within the same operation.</li>
-            <li>Groups you own are either transferred to another member (admin role passes randomly to a remaining member, with admins preferred) or deleted entirely if you were the only member.</li>
-            <li>Refresh tokens and active sessions are revoked.</li>
+            <li>Tasks, groups, and account data are kept until you delete them (or delete your account).</li>
+            <li>On-device chat history is capped at the most recent 500 messages; access tokens expire after 1 hour and refresh tokens after 30 days.</li>
+            <li>In-app notifications are purged after 30 days.</li>
             <li>Backups may retain residual data for up to 30 days for disaster recovery.</li>
         </ul>
+        <p>You can delete your account at any time from <em>Settings &rarr; Account &rarr; Delete Account</em>. This deletes your personal tasks, group memberships, and device tokens in the same operation, revokes your sessions, and either transfers groups you own to another member (admin preferred) or deletes them if you were the only member.</p>
     </div>
 
     <div class="card-group">
-        <h2>5. Your rights (GDPR / KVKK)</h2>
-        <p>You can request access, correction, or deletion of your personal data. For deletion, the in-app flow is the fastest path. For other requests, contact us at the address below.</p>
+        <h2>5. Your rights (GDPR)</h2>
+        <p>If you are in the EU/EEA, you have the right to access, rectify, erase, restrict or object to the processing of your personal data, the right to data portability, and the right to withdraw consent at any time.</p>
+        <ul>
+            <li><strong>Access / portability</strong>: export your data from within the app, or contact us.</li>
+            <li><strong>Erasure</strong>: the fastest path is <em>Settings &rarr; Account &rarr; Delete Account</em>.</li>
+            <li><strong>Other requests</strong>: email <a href="mailto:donebotapp@gmail.com">donebotapp@gmail.com</a>.</li>
+        </ul>
     </div>
 
     <div class="card-group">
@@ -392,7 +400,7 @@
 <!-- ======================== TÜRKÇE ======================== -->
 <section data-lang="tr">
     <h1>Gizlilik Politikası</h1>
-    <p class="updated">Son güncelleme: 30.04.2026</p>
+    <p class="updated">Son güncelleme: 05.07.2026</p>
 
     <p>Bu Gizlilik Politikası, DoneBot ("biz", "bizim") mobil uygulamasını ("Uygulama") kullandığınızda hangi bilgileri topladığımızı, nasıl kullandığımızı ve kimlerle paylaştığımızı açıklar.</p>
 
@@ -401,9 +409,9 @@
         <ul>
             <li><strong>Hesap bilgileri</strong>: e-posta adresi, görünen ad, profil avatarı, kimlik doğrulama tokenları.</li>
             <li><strong>Görevler ve gruplar</strong>: başlıklar, açıklamalar, tarihler, tekrar ayarları, tamamlanma durumu, grup üyelikleri ve atadığınız roller.</li>
-            <li><strong>DoneBot ile sohbet (AI asistan)</strong>: uygulama içi DoneBot asistanına gönderdiğiniz mesajlar, işlenmek üzere Google&rsquo;ın Gemini API&rsquo;sine gönderilir. Konuşma geçmişi, sohbet sürekliliği için cihazınızda ve sunucumuzda saklanır.</li>
-            <li><strong>Cihaz ve bildirim tokenları</strong>: Firebase Cloud Messaging tokenları, cihaz tanımlayıcıları ve uygulama sürümü.</li>
-            <li><strong>Teşhis verileri</strong>: Firebase Crashlytics çökme raporları ve Firebase Analytics kullanım olayları. (Mevcut olduğunda) uygulama ayarlarından devre dışı bırakabilirsiniz.</li>
+            <li><strong>DoneBot ile sohbet (AI asistan)</strong>: uygulama içi DoneBot asistanına gönderdiğiniz mesajlar, işlenmek üzere Google Vertex AI (Gemini) hizmetine gönderilir. Konuşma geçmişiniz yalnızca cihazınızda saklanır &mdash; sunucumuz durumsuzdur (stateless) ve sohbetlerinizi tutmaz. Tek istisna, açıkça <em>bildirdiğiniz (report)</em> bir AI yanıtıdır; bu yanıt güvenlik incelemesi için sunucumuzda saklanır.</li>
+            <li><strong>Cihaz ve bildirim tokenları</strong>: Firebase Cloud Messaging tokenı, rastgele üretilen bir cihaz tanımlayıcısı (donanım veya reklam kimliği değil), cihaz modeli ve uygulama sürümü. DoneBot reklam kimliği kullanmaz.</li>
+            <li><strong>Teşhis verileri</strong>: Firebase Crashlytics çökme raporları. Analytics ve performans izleme uygulamada bulunur ancak toplama varsayılan olarak kapalıdır; uygulama ayarlarından açıp kapatabilirsiniz.</li>
         </ul>
     </div>
 
@@ -418,34 +426,40 @@
     </div>
 
     <div class="card-group">
-        <h2>3. Paylaşım</h2>
+        <h2>3. Paylaşım ve yurt dışına aktarım</h2>
         <p>Verilerinizi yalnızca şunlarla paylaşırız:</p>
         <ul>
             <li><strong>Grup üyeleri</strong>: bir grup içindeki görevler, yorumlar ve etkinlikler o grubun tüm üyelerine görünür.</li>
-            <li><strong>Hizmet sağlayıcılar</strong>: Google Firebase (auth, FCM, Crashlytics, Analytics, AI Logic), Render (sunucu barındırma) ve standart altyapı alt-işleyicileri.</li>
+            <li><strong>Google Vertex AI (Gemini)</strong>, <code>us-central1</code> bölgesi (Amerika Birleşik Devletleri): DoneBot sohbetini kullandığınızda mesajınız ve kısa bir görev-bağlamı özeti işlenmek üzere gönderilir. <em>Gizli</em> olarak işaretlediğiniz görevler hariç tutulur. Girdi, Vertex AI şartlarına göre Google&rsquo;ın modellerini eğitmek için kullanılmaz.</li>
+            <li><strong>Google Firebase</strong>: bildirim iletimi (FCM) ve çökme teşhisi (Crashlytics); veri işleyen rolüyle.</li>
+            <li><strong>Altyapı sağlayıcıları</strong>: Render (sunucu barındırma) ve Neon (veritabanı); veri işleyen rolüyle.</li>
         </ul>
-        <p>Kişisel verilerinizi satmayız.</p>
+        <p><strong>Yurt dışına aktarım:</strong> DoneBot sohbetini kullanmanız, bu sohbet verisinin ABD&rsquo;deki Google sunucularına aktarılması anlamına gelir. Bu aktarım, sohbeti başlatmanızla (talebinizle) gerçekleşir. Kişisel verilerinizi satmayız.</p>
     </div>
 
     <div class="card-group">
         <h2>4. Veri saklama ve silme</h2>
-        <p>Hesabınızı istediğiniz zaman <em>Ayarlar &rarr; Hesap &rarr; Hesabı Sil</em> yolundan silebilirsiniz. Sildiğinizde:</p>
+        <p>Verilerinizi yalnızca gerektiği süre boyunca saklarız:</p>
         <ul>
-            <li>Tüm kişisel görevleriniz, sohbet mesajlarınız, grup üyelikleriniz ve cihaz tokenlarınız aynı işlemde silinir.</li>
-            <li>Sahibi olduğunuz gruplar başka bir üyeye devredilir (yöneticilik rolü kalan üyelerden rastgele birine geçer, mevcut yöneticiler tercih edilir) ya da grupta tek üye sizseniz tamamen silinir.</li>
-            <li>Yenileme tokenları ve aktif oturumlar iptal edilir.</li>
+            <li>Görevler, gruplar ve hesap verileri, siz silene (veya hesabınızı silene) kadar saklanır.</li>
+            <li>Cihazdaki sohbet geçmişi en fazla son 500 mesajla sınırlıdır; erişim tokenları 1 saat, yenileme tokenları 30 gün sonra sona erer.</li>
+            <li>Uygulama içi bildirimler 30 gün sonra silinir.</li>
             <li>Felaket kurtarma için yedeklerde kalan veriler en fazla 30 gün boyunca saklanabilir.</li>
         </ul>
+        <p>Hesabınızı istediğiniz zaman <em>Ayarlar &rarr; Hesap &rarr; Hesabı Sil</em> yolundan silebilirsiniz. Bu işlem; kişisel görevlerinizi, grup üyeliklerinizi ve cihaz tokenlarınızı aynı anda siler, oturumlarınızı iptal eder ve sahibi olduğunuz grupları başka bir üyeye devreder (yönetici tercih edilir) ya da tek üye sizseniz siler.</p>
     </div>
 
     <div class="card-group">
-        <h2>5. Haklarınız (GDPR / KVKK)</h2>
-        <p>Kişisel verilerinize erişim, düzeltme veya silme talebinde bulunabilirsiniz. Silme için en hızlı yol uygulama içi akıştır. Diğer talepler için aşağıdaki adresten bize ulaşın.</p>
+        <h2>5. KVKK Aydınlatması ve Haklarınız</h2>
+        <p><strong>Veri Sorumlusu:</strong> Berat Baran (İstanbul, Türkiye) &mdash; <a href="mailto:donebotapp@gmail.com">donebotapp@gmail.com</a>.</p>
+        <p>Kişisel verileriniz; hesabınızı oluşturmak ve doğrulamak, görev/grup özelliklerini sunmak, bildirim göndermek ve (kullandığınızda) AI sohbet isteğinizi işlemek amaçlarıyla, KVKK m.5/6&rsquo;daki &ldquo;sözleşmenin kurulması/ifası&rdquo; ve &ldquo;meşru menfaat&rdquo; hukuki sebeplerine dayanılarak işlenir. Sohbet verisinin yurt dışına aktarımı için yukarıdaki 3. bölüme bakınız.</p>
+        <p>KVKK m.11 uyarınca şu haklara sahipsiniz: kişisel verinizin işlenip işlenmediğini <strong>öğrenme</strong>, işlenmişse <strong>bilgi talep etme</strong>, işlenme amacını ve amaca uygun kullanılıp kullanılmadığını <strong>öğrenme</strong>, yurt içinde/dışında aktarıldığı üçüncü kişileri <strong>bilme</strong>, eksik/yanlış işlenmişse <strong>düzeltilmesini</strong>, şartları oluştuğunda <strong>silinmesini/yok edilmesini</strong>, düzeltme/silme işlemlerinin aktarıldığı kişilere <strong>bildirilmesini</strong> isteme, münhasıran otomatik sistemlerle analiz sonucu aleyhinize bir sonuç doğmasına <strong>itiraz etme</strong> ve zarara uğrarsanız <strong>giderilmesini talep etme</strong>.</p>
+        <p><strong>Başvuru:</strong> Bu haklarınızı kullanmak için <a href="mailto:donebotapp@gmail.com">donebotapp@gmail.com</a> adresine yazabilirsiniz. Silme için en hızlı yol uygulama içi <em>Ayarlar &rarr; Hesap &rarr; Hesabı Sil</em> akışıdır.</p>
     </div>
 
     <div class="card-group">
         <h2>6. Çocuklar</h2>
-        <p>DoneBot, 13 yaş altındaki çocuklara (veya bulunduğunuz ülkedeki eşdeğer asgari yaşa) yönelik değildir. Çocuklardan bilerek kişisel bilgi toplamayız.</p>
+        <p>DoneBot, 13 yaş altındaki çocuklara yönelik değildir ve çocuklardan bilerek kişisel bilgi toplamayız. 13&ndash;18 yaş arasındaki kullanıcılar uygulamayı yalnızca ebeveyn/veli onayı ile kullanmalıdır.</p>
     </div>
 
     <div class="card-group">
