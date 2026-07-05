@@ -5,7 +5,8 @@
       "namespace": "android_app",
       "package_name": "com.todoapp.mobile",
       "sha256_cert_fingerprints": [
-        "AC:CB:E6:B4:6D:88:09:56:48:21:5F:A7:4A:DD:DA:4D:40:68:84:DB:CE:3B:12:AA:A0:3C:17:D0:02:2C:6A:93"
+        "AC:CB:E6:B4:6D:88:09:56:48:21:5F:A7:4A:DD:DA:4D:40:68:84:DB:CE:3B:12:AA:A0:3C:17:D0:02:2C:6A:93",
+        "A9:20:0D:B7:8F:99:4B:9A:BE:D0:8E:DD:32:4E:A6:C6:21:51:98:E9:47:BD:8B:3F:D0:99:FC:8B:31:E3:65:B2"
       ]
     }
   },
