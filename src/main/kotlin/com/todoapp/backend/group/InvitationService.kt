@@ -4,6 +4,7 @@ import com.todoapp.backend.notif.NotificationPublisher
 import com.todoapp.backend.notif.inbox.NotificationType
 import com.todoapp.backend.user.UserRepository
 import com.todoapp.backend.user.UserSummary
+import org.springframework.dao.DataIntegrityViolationException
 import org.springframework.http.HttpStatus
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
@@ -113,13 +114,23 @@ class InvitationService(
         val group = groups.findSummaryById(row.groupId)
             ?: throw ResponseStatusException(HttpStatus.NOT_FOUND, "Group not found")
         if (members.findByGroupIdAndUserId(row.groupId, callerId) == null) {
-            members.save(
-                GroupMemberEntity(
-                    groupId = row.groupId,
-                    userId = callerId,
-                    role = GroupRole.MEMBER.name,
+            try {
+                // saveAndFlush so a unique-index violation (two concurrent accepts of the same
+                // invitation racing past the null-check above) surfaces here, inside the try —
+                // not later at commit (same pattern as TaskService.create).
+                members.saveAndFlush(
+                    GroupMemberEntity(
+                        groupId = row.groupId,
+                        userId = callerId,
+                        role = GroupRole.MEMBER.name,
+                    )
                 )
-            )
+            } catch (e: DataIntegrityViolationException) {
+                // The concurrent accept won the insert (and commits the status flip); this tx is
+                // already rollback-only, so nothing partial persists. Surface the same 409 the
+                // status guard gives a late second tap; a client retry heals via the pre-check.
+                throw ResponseStatusException(HttpStatus.CONFLICT, "Invitation is not pending", e)
+            }
         }
         val acceptor = users.findSummaryById(callerId)
         activities.save(

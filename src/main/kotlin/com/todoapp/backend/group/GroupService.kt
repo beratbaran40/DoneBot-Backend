@@ -44,7 +44,9 @@ class GroupService(
 
     @Transactional(readOnly = true)
     fun listSummaries(userId: Long): GroupSummaryListData {
-        val mine = members.findAllByUserId(userId)
+        // Defense in depth: a duplicate membership pair (pre-V17 data) must not mirror into a
+        // duplicate group card on the client.
+        val mine = members.findAllByUserId(userId).distinctBy { it.groupId }
         val summaries = mine.map { membership ->
             val group = groups.findSummaryById(membership.groupId)
                 ?: throw ResponseStatusException(HttpStatus.NOT_FOUND, "Group ${membership.groupId} not found")
