@@ -12,7 +12,10 @@ import java.time.Instant
 enum class GroupActivityType {
     TASK_CREATED, TASK_UPDATED, TASK_DELETED,
     TASK_ASSIGNED, TASK_UNASSIGNED, TASK_COMPLETED,
-    MEMBER_ADDED, MEMBER_REMOVED, OWNERSHIP_TRANSFERRED,
+    // MEMBER_LEFT split out of MEMBER_REMOVED so clients can localize the two sentences apart
+    // (removed-by-admin carries targetName; leaving is the actor's own action). Safe to add:
+    // nothing switches exhaustively over this enum and old clients render `description` verbatim.
+    MEMBER_ADDED, MEMBER_REMOVED, MEMBER_LEFT, OWNERSHIP_TRANSFERRED,
 }
 
 @Entity
@@ -39,6 +42,11 @@ class GroupActivityEntity(
 
     @Column
     var taskTitle: String? = null,
+
+    // The person the action was done TO (assignee / removed member / new owner) — null for
+    // self-contained actions. Clients build localized sentences from (type, taskTitle, targetName).
+    @Column(length = 255)
+    var targetName: String? = null,
 
     @Column(nullable = false, length = 500)
     var description: String,

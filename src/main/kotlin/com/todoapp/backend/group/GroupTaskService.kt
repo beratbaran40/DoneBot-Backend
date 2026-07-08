@@ -61,7 +61,7 @@ class GroupTaskService(
             val assigneeName = users.findSummaryById(entity.assignedToUserId!!)?.displayName ?: "?"
             activity.log(groupId, callerId, GroupActivityType.TASK_ASSIGNED,
                 description = "Assigned “${entity.title}” to $assigneeName",
-                taskId = entity.id, taskTitle = entity.title)
+                taskId = entity.id, taskTitle = entity.title, targetName = assigneeName)
             if (entity.assignedToUserId != callerId) {
                 publisher.publish(
                     userIds = listOf(entity.assignedToUserId!!),
@@ -157,7 +157,8 @@ class GroupTaskService(
             } else {
                 val name = users.findSummaryById(saved.assignedToUserId!!)?.displayName ?: "?"
                 activity.log(groupId, callerId, GroupActivityType.TASK_ASSIGNED,
-                    description = "Assigned “${saved.title}” to $name", taskId = saved.id, taskTitle = saved.title)
+                    description = "Assigned “${saved.title}” to $name",
+                    taskId = saved.id, taskTitle = saved.title, targetName = name)
                 if (saved.assignedToUserId != callerId) {
                     publisher.publish(
                         userIds = listOf(saved.assignedToUserId!!),

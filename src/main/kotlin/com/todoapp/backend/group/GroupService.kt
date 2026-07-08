@@ -24,12 +24,14 @@ class GroupService(
         actorUserId: Long,
         type: GroupActivityType,
         description: String,
+        targetName: String? = null,
     ) {
         activities.save(
             GroupActivityEntity(
                 groupId = groupId,
                 actorUserId = actorUserId,
                 type = type.name,
+                targetName = targetName,
                 description = description,
             )
         )
@@ -115,7 +117,7 @@ class GroupService(
         }
         val name = users.findSummaryById(memberUserId)?.displayName ?: "user"
         members.deleteByGroupIdAndUserId(groupId, memberUserId)
-        logActivity(groupId, userId, GroupActivityType.MEMBER_REMOVED, "Removed $name from the group")
+        logActivity(groupId, userId, GroupActivityType.MEMBER_REMOVED, "Removed $name from the group", targetName = name)
     }
 
     /**
@@ -136,7 +138,9 @@ class GroupService(
         }
         val name = users.findSummaryById(userId)?.displayName ?: "user"
         members.deleteByGroupIdAndUserId(groupId, userId)
-        logActivity(groupId, userId, GroupActivityType.MEMBER_REMOVED, "$name left the group")
+        // MEMBER_LEFT (not MEMBER_REMOVED): the actor is the leaver, so clients localize this
+        // without a target; the description stays English for pre-V18 clients.
+        logActivity(groupId, userId, GroupActivityType.MEMBER_LEFT, "$name left the group")
     }
 
     @Transactional
@@ -155,7 +159,7 @@ class GroupService(
         group.ownerId = req.userId
         groups.save(group)
         val newOwnerName = users.findSummaryById(req.userId)?.displayName ?: "user"
-        logActivity(groupId, userId, GroupActivityType.OWNERSHIP_TRANSFERRED, "Transferred ownership to $newOwnerName")
+        logActivity(groupId, userId, GroupActivityType.OWNERSHIP_TRANSFERRED, "Transferred ownership to $newOwnerName", targetName = newOwnerName)
     }
 
     @Transactional

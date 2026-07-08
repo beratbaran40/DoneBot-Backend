@@ -13,6 +13,7 @@ data class GroupActivityData(
     val description: String,
     val timestamp: Long,
     val taskTitle: String?,
+    val targetName: String?,
 )
 
 data class GroupActivityListData(
@@ -34,6 +35,7 @@ class GroupActivityService(
         description: String,
         taskId: Long? = null,
         taskTitle: String? = null,
+        targetName: String? = null,
     ) {
         activities.save(
             GroupActivityEntity(
@@ -42,6 +44,7 @@ class GroupActivityService(
                 type = type.name,
                 taskId = taskId,
                 taskTitle = taskTitle,
+                targetName = targetName,
                 description = description,
             )
         )
@@ -61,6 +64,7 @@ class GroupActivityService(
                 description = e.description,
                 timestamp = e.timestamp.toEpochMilli(),
                 taskTitle = e.taskTitle,
+                targetName = e.targetName,
             )
         }
         return GroupActivityListData(dtos, dtos.size)
