@@ -24,8 +24,13 @@ git push -u origin main
 3. Settings:
    - **Runtime**: Docker (Render auto-detects the Dockerfile in repo root)
    - **Region**: closest to you / your users
-   - **Instance type**: `Free`
+   - **Instance type**: `Starter` (the live service runs on Starter — always-on, no idle spin-down.
+     `Free` works for a throwaway trial but sleeps after 15 min and hard-restarts on every deploy.)
    - **Branch**: `main`
+   - **Health Check Path**: `/actuator/health/liveness` — REQUIRED for zero-downtime deploys
+     (without it every push hard-restarts the service and requests fail for 1–3 min).
+     Use the `/liveness` sub-path, NOT `/actuator/health`: the aggregate health group pings the
+     database, and Render polls the health path constantly — Neon would never autosuspend.
 4. Add **Environment Variables** (Render dashboard → Environment):
 
 | Key | Value |

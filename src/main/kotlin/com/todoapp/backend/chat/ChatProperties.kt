@@ -28,4 +28,13 @@ data class ChatProperties(
      * limits cap individuals but not total Vertex spend; over this, all chat degrades to 503.
      */
     val maxGlobalDailyRequests: Int = 5000,
+    /**
+     * Hard wall-clock ceiling for ONE chat turn (all Vertex rounds + tool executions). Must stay
+     * comfortably below the Android client's 60s OkHttp read timeout: past that the client throws
+     * SocketTimeoutException and shows a connectivity-flavored error while the server keeps
+     * burning Vertex tokens on an answer nobody will receive. Hitting the deadline returns the
+     * same marked 503 as a Vertex outage, which the client renders as its "AI taking a break"
+     * banner (Tier 1.5).
+     */
+    val turnDeadlineMs: Long = 45_000,
 )

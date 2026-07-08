@@ -111,6 +111,39 @@ class ChatServiceVertexFallbackTest {
         assertThat(ex.reason).contains("vertex_unavailable")
     }
 
+    // Tier 1.5 turn deadline: the server must answer (even if with a marked 503) well before the
+    // Android client's 60s read timeout — a client-side timeout renders as a connectivity error
+    // and the server keeps paying Vertex for an answer nobody receives.
+
+    @Test
+    fun `an exhausted deadline short-circuits to 503 without spending a Vertex call`() {
+        val service = ChatService(vertex, tools, taskRepo, users, ChatProperties(turnDeadlineMs = 1), tracker)
+
+        val ex = assertThrows<ResponseStatusException> { service.reply(USER_ID, request()) }
+
+        assertThat(ex.statusCode).isEqualTo(HttpStatus.SERVICE_UNAVAILABLE)
+        assertThat(ex.reason).contains("vertex_unavailable")
+        Mockito.verify(vertex, Mockito.never()).generate(any(), any())
+    }
+
+    @Test
+    fun `a generate hanging past the deadline is cut and maps to 503`() {
+        // Budget over MIN_ROUND_BUDGET_MS so the round actually starts; generate hangs way past it.
+        val service = ChatService(vertex, tools, taskRepo, users, ChatProperties(turnDeadlineMs = 2_500), tracker)
+        given(vertex.generate(any(), any())).willAnswer {
+            Thread.sleep(30_000)
+            error("should have been cancelled by the deadline")
+        }
+
+        val startedAt = System.currentTimeMillis()
+        val ex = assertThrows<ResponseStatusException> { service.reply(USER_ID, request()) }
+        val elapsed = System.currentTimeMillis() - startedAt
+
+        assertThat(ex.statusCode).isEqualTo(HttpStatus.SERVICE_UNAVAILABLE)
+        assertThat(ex.reason).contains("vertex_unavailable")
+        assertThat(elapsed).isLessThan(10_000)
+    }
+
     private fun stubGenerateToThrow(t: Throwable) {
         // willAnswer (not willThrow) so a checked IOException — undeclared on the Kotlin seam — is accepted.
         given(vertex.generate(any(), any())).willAnswer { throw t }

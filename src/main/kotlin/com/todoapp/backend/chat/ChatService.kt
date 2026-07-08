@@ -6,9 +6,12 @@ import com.google.api.gax.rpc.StatusCode
 import com.google.cloud.vertexai.api.Candidate
 import com.google.cloud.vertexai.api.Content
 import com.google.cloud.vertexai.api.FunctionResponse
+import com.google.cloud.vertexai.api.GenerateContentResponse
 import com.google.cloud.vertexai.api.Part
+import com.google.cloud.vertexai.generativeai.GenerativeModel
 import com.todoapp.backend.task.TaskRepository
 import com.todoapp.backend.user.UserRepository
+import jakarta.annotation.PreDestroy
 import org.slf4j.LoggerFactory
 import org.springframework.core.io.ClassPathResource
 import org.springframework.http.HttpStatus
@@ -17,6 +20,13 @@ import org.springframework.web.server.ResponseStatusException
 import java.io.IOException
 import java.nio.charset.StandardCharsets
 import java.time.LocalDate
+import java.util.concurrent.Callable
+import java.util.concurrent.ExecutionException
+import java.util.concurrent.ExecutorService
+import java.util.concurrent.Executors
+import java.util.concurrent.TimeUnit
+import java.util.concurrent.TimeoutException
+import java.util.concurrent.atomic.AtomicInteger
 
 /**
  * Orchestrates one chat turn end-to-end:
@@ -45,6 +55,19 @@ class ChatService(
 
     private val systemInstructionEn: String by lazy { loadResource("chat/system-instruction-en.md") }
     private val systemInstructionTr: String by lazy { loadResource("chat/system-instruction-tr.md") }
+
+    // Side threads for the blocking Vertex calls so the turn deadline can cut a hung/slow generate
+    // (Future.get with timeout + cancel(true) → gRPC turns the interrupt into an RPC cancellation).
+    // Cached pool: sized by concurrent chat turns, which the per-user + global rate limits already cap.
+    private val vertexThreadCounter = AtomicInteger(0)
+    private val vertexExecutor: ExecutorService = Executors.newCachedThreadPool { runnable ->
+        Thread(runnable, "vertex-generate-${vertexThreadCounter.incrementAndGet()}").apply { isDaemon = true }
+    }
+
+    @PreDestroy
+    fun shutdownExecutor() {
+        vertexExecutor.shutdownNow()
+    }
 
     fun reply(userId: Long, request: ChatMessageRequest): ChatMessageResponse {
         if (!vertex.isReady) {
@@ -81,7 +104,19 @@ class ChatService(
         repeat(props.maxToolIterations) { iteration ->
             roundTrips++
             val response = try {
-                vertex.generate(model, conversation)
+                // Turn deadline (Tier 1.5): tools run between rounds on this thread, so checking the
+                // remaining budget here bounds the WHOLE turn, and the per-call Future timeout bounds
+                // a single hung generate. Without this, a slow Vertex tail pushes the turn past the
+                // client's 60s read timeout — the client shows a connectivity error and may retype,
+                // while the server keeps paying for an answer nobody receives.
+                val remainingMs = props.turnDeadlineMs - (System.currentTimeMillis() - started)
+                if (remainingMs < MIN_ROUND_BUDGET_MS) throw TurnDeadlineExceededException()
+                generateWithDeadline(model, conversation, remainingMs)
+            } catch (e: TurnDeadlineExceededException) {
+                failVertex(
+                    userId, roundTrips, toolsCalled, promptTokens, responseTokens, totalTokens, started, "turn_deadline", e,
+                )
+                throw ResponseStatusException(HttpStatus.SERVICE_UNAVAILABLE, vertexUnavailableMessage(locale))
             } catch (e: ResourceExhaustedException) {
                 // Vertex project quota exhausted (429). Distinct from our own per-user ChatRateLimiter.
                 failVertex(
@@ -214,6 +249,33 @@ class ChatService(
             HttpStatus.BAD_GATEWAY,
             "Tool loop exceeded ${props.maxToolIterations} iterations",
         )
+    }
+
+    /**
+     * Runs one blocking Vertex generate on a side thread, capped at [remainingMs]. On timeout the
+     * future is cancelled with interruption (gRPC blocking stubs translate that into an RPC
+     * cancellation, so we also stop paying for the abandoned generation) and the turn fails as
+     * [TurnDeadlineExceededException]. [ExecutionException] is unwrapped so the caller's existing
+     * quota/outage/IO catch branches keep matching the real exception types.
+     */
+    private fun generateWithDeadline(
+        model: GenerativeModel,
+        conversation: List<Content>,
+        remainingMs: Long,
+    ): GenerateContentResponse {
+        val future = vertexExecutor.submit(Callable { vertex.generate(model, conversation) })
+        return try {
+            future.get(remainingMs, TimeUnit.MILLISECONDS)
+        } catch (e: TimeoutException) {
+            future.cancel(true)
+            throw TurnDeadlineExceededException(e)
+        } catch (e: InterruptedException) {
+            future.cancel(true)
+            Thread.currentThread().interrupt()
+            throw TurnDeadlineExceededException(e)
+        } catch (e: ExecutionException) {
+            throw e.cause ?: e
+        }
     }
 
     /**
@@ -403,6 +465,10 @@ class ChatService(
         private const val MAX_PREAMBLE_TASKS = 20
         private const val MAX_HISTORY_TURN_CHARS = 4_000
 
+        // Don't start a Vertex round with less budget than this — a call that would be cancelled
+        // near-immediately still costs a round trip (and possibly billed tokens).
+        private const val MIN_ROUND_BUDGET_MS = 2_000L
+
         // Vertex-failure markers embedded in the ResponseStatusException reason so the Android client can
         // classify the failure off the message text (mirrors the existing rate-limit marker mechanism).
         private const val VERTEX_QUOTA_MARKER = "vertex_quota"
@@ -423,3 +489,7 @@ class ChatService(
         )
     }
 }
+
+/** One chat turn exceeded [ChatProperties.turnDeadlineMs] (all Vertex rounds + tool executions). */
+private class TurnDeadlineExceededException(cause: Throwable? = null) :
+    RuntimeException("Chat turn exceeded the configured deadline", cause)
