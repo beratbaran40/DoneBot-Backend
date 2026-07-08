@@ -53,6 +53,17 @@ data class GroupData(
     val createdAt: Long,
     val updatedAt: Long,
     val members: List<GroupMemberData>,
+    // Outgoing invites that are still PENDING — rides along on the detail payload so the members
+    // tab shows "invited" rows without an extra round-trip. Old clients ignore unknown keys.
+    val pendingInvitations: List<GroupInvitationData> = emptyList(),
+)
+
+// Slim, members-tab-scoped projection of an invitation (no inviter/group decoration on purpose).
+data class GroupInvitationData(
+    val id: Long,
+    val inviteeEmail: String,
+    val status: String,
+    val createdAt: Long,
 )
 
 data class GroupSummaryData(

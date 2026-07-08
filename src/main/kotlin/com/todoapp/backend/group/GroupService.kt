@@ -17,6 +17,7 @@ class GroupService(
     private val tasks: TaskRepository,
     private val activities: GroupActivityRepository,
     private val invitations: InvitationService,
+    private val invitationRepository: InvitationRepository,
 ) {
     private fun logActivity(
         groupId: Long,
@@ -64,9 +65,22 @@ class GroupService(
     @Transactional(readOnly = true)
     fun detail(userId: Long, groupId: Long): GroupData {
         requireMember(groupId, userId)
-        return groups.findById(groupId).orElseThrow {
+        val group = groups.findById(groupId).orElseThrow {
             ResponseStatusException(HttpStatus.NOT_FOUND, "Group not found")
-        }.toData()
+        }
+        // Pending outgoing invites ride along only on the detail call (create/update keep the
+        // default empty list) — the members tab is the single consumer.
+        val pendingInvitations = invitationRepository
+            .findByGroupIdAndStatusOrderByCreatedAtDesc(groupId, InvitationStatus.PENDING.name)
+            .map {
+                GroupInvitationData(
+                    id = it.id,
+                    inviteeEmail = it.inviteeEmail,
+                    status = it.status,
+                    createdAt = it.createdAt.toEpochMilli(),
+                )
+            }
+        return group.toData().copy(pendingInvitations = pendingInvitations)
     }
 
     @Transactional

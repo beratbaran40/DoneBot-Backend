@@ -6,6 +6,7 @@ import com.todoapp.backend.group.InvitationRepository
 import org.junit.jupiter.api.Test
 import org.springframework.beans.factory.annotation.Autowired
 import org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete
+import org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get
 import org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post
 import org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath
 import org.springframework.test.web.servlet.result.MockMvcResultMatchers.status
@@ -66,5 +67,28 @@ class InvitationIdorIntegrationTest : AbstractIntegrationTest() {
         mockMvc
             .perform(post("/family-groups/invitations/1/accept"))
             .andExpect(status().isUnauthorized)
+    }
+
+    @Test
+    fun `group detail embeds the group's pending invitations`() {
+        val inviter = registerUser("Owner")
+        val invitee = registerUser("Guest")
+        val group = groupService.create(inviter.user.id, CreateGroupRequest(name = "Family"))
+        invitations.save(
+            InvitationEntity(
+                groupId = group.id,
+                inviterUserId = inviter.user.id,
+                inviteeUserId = invitee.user.id,
+                inviteeEmail = invitee.user.email,
+            ),
+        )
+
+        mockMvc
+            .perform(
+                get("/family-groups/${group.id}")
+                    .header("Authorization", bearer(inviter.user.id)),
+            ).andExpect(status().isOk)
+            .andExpect(jsonPath("$.data.pendingInvitations[0].inviteeEmail").value(invitee.user.email))
+            .andExpect(jsonPath("$.data.pendingInvitations[0].status").value("PENDING"))
     }
 }

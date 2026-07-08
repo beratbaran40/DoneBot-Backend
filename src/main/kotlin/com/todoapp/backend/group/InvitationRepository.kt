@@ -10,6 +10,11 @@ interface InvitationRepository : JpaRepository<InvitationEntity, Long> {
         status: String,
     ): List<InvitationEntity>
 
+    fun findByGroupIdAndStatusOrderByCreatedAtDesc(
+        groupId: Long,
+        status: String,
+    ): List<InvitationEntity>
+
     fun findByIdAndInviteeUserId(id: Long, inviteeUserId: Long): InvitationEntity?
 
     fun findByIdAndInviterUserId(id: Long, inviterUserId: Long): InvitationEntity?
