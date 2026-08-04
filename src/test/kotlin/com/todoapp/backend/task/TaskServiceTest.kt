@@ -1,5 +1,6 @@
 package com.todoapp.backend.task
 
+import com.todoapp.backend.group.GroupMemberEntity
 import com.todoapp.backend.group.GroupMemberRepository
 import com.todoapp.backend.notif.NotificationPublisher
 import com.todoapp.backend.user.UserRepository
@@ -150,6 +151,93 @@ class TaskServiceTest {
         assertThat(stored.recurrenceUntil).isNull()
     }
 
+    @Test
+    fun `a group member who did not create the task can still tick its day`() {
+        // A group task belongs to the group. Owner-only meant a shared recurring chore could be
+        // completed by exactly one person — its creator — which is the opposite of shared.
+        val groupTask = taskEntity(id = 11L, clientTaskId = null, recurrence = Recurrence.DAILY)
+            .apply { familyGroupId = GROUP }
+        given(tasks.findById(11L)).willReturn(Optional.of(groupTask))
+        given(members.findByGroupIdAndUserId(GROUP, OTHER_MEMBER)).willReturn(groupMember())
+        given(dailyCompletions.findByTaskIdAndDate(11L, DAY)).willReturn(null)
+
+        service.setDailyCompletion(OTHER_MEMBER, 11L, TaskDailyCompletionRequest(date = DAY, completed = true))
+
+        verify(dailyCompletions, times(1)).save(any())
+    }
+
+    @Test
+    fun `a stranger to the group is still refused`() {
+        val groupTask = taskEntity(id = 12L, clientTaskId = null, recurrence = Recurrence.DAILY)
+            .apply { familyGroupId = GROUP }
+        given(tasks.findById(12L)).willReturn(Optional.of(groupTask))
+        given(members.findByGroupIdAndUserId(GROUP, OTHER_MEMBER)).willReturn(null)
+
+        val ex = assertThrows<ResponseStatusException> {
+            service.setDailyCompletion(OTHER_MEMBER, 12L, TaskDailyCompletionRequest(date = DAY, completed = true))
+        }
+
+        assertThat(ex.statusCode).isEqualTo(HttpStatus.FORBIDDEN)
+        verify(dailyCompletions, never()).save(any())
+    }
+
+    @Test
+    fun `a personal task is still owner-only`() {
+        // The group branch must not become a hole in the personal task guard.
+        val personal = taskEntity(id = 13L, clientTaskId = null, recurrence = Recurrence.DAILY)
+        given(tasks.findById(13L)).willReturn(Optional.of(personal))
+
+        val ex = assertThrows<ResponseStatusException> {
+            service.setDailyCompletion(OTHER_MEMBER, 13L, TaskDailyCompletionRequest(date = DAY, completed = true))
+        }
+
+        assertThat(ex.statusCode).isEqualTo(HttpStatus.FORBIDDEN)
+        verify(members, never()).findByGroupIdAndUserId(anyLong(), anyLong())
+    }
+
+    @Test
+    fun `a teammate's tick shows up in my completion list`() {
+        // The by-author filter used to hide it, so the day looked undone on every other device.
+        given(members.findAllByUserId(OWNER)).willReturn(listOf(groupMember()))
+        given(tasks.findAllByFamilyGroupIdIn(listOf(GROUP)))
+            .willReturn(listOf(taskEntity(id = 14L, clientTaskId = null).apply { familyGroupId = GROUP }))
+        given(dailyCompletions.findAllByUserIdAndDateBetween(OWNER, 0L, 100L)).willReturn(emptyList())
+        given(dailyCompletions.findAllByTaskIdInAndDateBetween(listOf(14L), 0L, 100L))
+            .willReturn(listOf(completion(taskId = 14L, userId = OTHER_MEMBER)))
+
+        val result = service.listDailyCompletions(OWNER, 0L, 100L)
+
+        assertThat(result.items).hasSize(1)
+        assertThat(result.items.first().taskId).isEqualTo(14L)
+    }
+
+    @Test
+    fun `my own tick on a group task is not counted twice`() {
+        // It comes back from both queries; the occurrence is (taskId, date), not the row.
+        given(members.findAllByUserId(OWNER)).willReturn(listOf(groupMember()))
+        given(tasks.findAllByFamilyGroupIdIn(listOf(GROUP)))
+            .willReturn(listOf(taskEntity(id = 15L, clientTaskId = null).apply { familyGroupId = GROUP }))
+        given(dailyCompletions.findAllByUserIdAndDateBetween(OWNER, 0L, 100L))
+            .willReturn(listOf(completion(taskId = 15L, userId = OWNER)))
+        given(dailyCompletions.findAllByTaskIdInAndDateBetween(listOf(15L), 0L, 100L))
+            .willReturn(listOf(completion(taskId = 15L, userId = OWNER)))
+
+        val result = service.listDailyCompletions(OWNER, 0L, 100L)
+
+        assertThat(result.items).hasSize(1)
+    }
+
+    @Test
+    fun `a user in no group never runs the group queries`() {
+        given(members.findAllByUserId(OWNER)).willReturn(emptyList())
+        given(dailyCompletions.findAllByUserIdAndDateBetween(OWNER, 0L, 100L)).willReturn(emptyList())
+
+        service.listDailyCompletions(OWNER, 0L, 100L)
+
+        verify(tasks, never()).findAllByFamilyGroupIdIn(any())
+        verify(dailyCompletions, never()).findAllByTaskIdInAndDateBetween(any(), anyLong(), anyLong())
+    }
+
     private fun request(clientTaskId: String?) =
         TaskRequest(title = "Task", date = 0, timeStart = 0, timeEnd = 0, clientTaskId = clientTaskId)
 
@@ -165,11 +253,18 @@ class TaskServiceTest {
             recurrence = recurrence,
         )
 
+    private fun groupMember() = GroupMemberEntity(id = 1L, groupId = GROUP, userId = OTHER_MEMBER)
+
+    private fun completion(taskId: Long, userId: Long) =
+        TaskDailyCompletionEntity(taskId = taskId, userId = userId, date = DAY, completedAt = 0L)
+
     // Kotlin-friendly Mockito.any() for reference-typed params (returns null; safe on a stubbed mock).
     private fun <T> any(): T = Mockito.any()
 
     private companion object {
         const val OWNER = 1L
+        const val OTHER_MEMBER = 2L
+        const val GROUP = 77L
         const val KEY = "client-key-123"
         const val DAY = 20_000L
     }

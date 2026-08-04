@@ -9,6 +9,9 @@ interface TaskRepository : JpaRepository<TaskEntity, Long> {
     fun findAllByOwnerIdAndFamilyGroupIdIsNull(ownerId: Long): List<TaskEntity>
     fun findAllByFamilyGroupId(groupId: Long): List<TaskEntity>
 
+    /** Every group task across all the groups a user belongs to, in one query rather than N. */
+    fun findAllByFamilyGroupIdIn(groupIds: Collection<Long>): List<TaskEntity>
+
     /** §4.12 idempotency: return the existing task for a client-generated key so a retried create dedups. */
     fun findByOwnerIdAndClientTaskId(ownerId: Long, clientTaskId: String): TaskEntity?
 

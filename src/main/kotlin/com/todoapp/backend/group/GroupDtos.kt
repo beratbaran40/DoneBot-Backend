@@ -1,5 +1,9 @@
 package com.todoapp.backend.group
 
+import com.todoapp.backend.task.Recurrence
+import com.todoapp.backend.task.SubtaskData
+import com.todoapp.backend.task.SubtaskRequest
+import com.todoapp.backend.task.TaskCategory
 import jakarta.validation.constraints.Email
 import jakarta.validation.constraints.NotBlank
 
@@ -130,6 +134,21 @@ data class GroupTaskUpdateRequest(
      * `locationName`/`locationLat` etc. if those are non-null).
      */
     val clearLocation: Boolean = false,
+    /**
+     * Recurrence rule and steps. A group task is a `TaskEntity` like any other, so these have
+     * always been storable — only this DTO stopped them from being editable. Null on every field
+     * means "no change", matching the rest of this request.
+     */
+    val recurrence: Recurrence? = null,
+    val recurrenceInterval: Int? = null,
+    @field:jakarta.validation.constraints.Size(max = 64) val recurrenceByDay: String? = null,
+    val recurrenceUntil: Long? = null,
+    /** Absolute reminder times as SECOND-of-day. */
+    val reminderTimes: List<Int>? = null,
+    val category: TaskCategory? = null,
+    @field:jakarta.validation.constraints.Size(max = 64) val customCategoryName: String? = null,
+    /** Non-null replaces the whole step set; null leaves the existing steps untouched. */
+    val subtasks: List<SubtaskRequest>? = null,
 )
 
 data class GroupTaskData(
@@ -145,6 +164,19 @@ data class GroupTaskData(
     val locationLng: Double? = null,
     val locationName: String? = null,
     val locationAddress: String? = null,
+    /**
+     * Full task shape, so a group task can be everything a personal one can. The defaults describe
+     * the flat, non-repeating task group tasks used to be limited to.
+     */
+    val isAllDay: Boolean = false,
+    val category: TaskCategory = TaskCategory.PERSONAL,
+    val customCategoryName: String? = null,
+    val recurrence: Recurrence = Recurrence.NONE,
+    val recurrenceInterval: Int = 1,
+    val recurrenceByDay: String? = null,
+    val recurrenceUntil: Long? = null,
+    val reminderTimes: List<Int> = emptyList(),
+    val subtasks: List<SubtaskData> = emptyList(),
 )
 
 data class GroupTaskListData(

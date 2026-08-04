@@ -2,9 +2,12 @@ package com.todoapp.backend.group
 
 import com.todoapp.backend.notif.NotificationPublisher
 import com.todoapp.backend.notif.inbox.NotificationType
+import com.todoapp.backend.task.SubtaskData
 import com.todoapp.backend.task.TaskEntity
 import com.todoapp.backend.task.TaskPhotoRepository
 import com.todoapp.backend.task.TaskRepository
+import com.todoapp.backend.task.TaskSubtaskRepository
+import com.todoapp.backend.task.reconcileSubtasks
 import com.todoapp.backend.user.UserRepository
 import org.springframework.http.HttpStatus
 import org.springframework.stereotype.Service
@@ -23,6 +26,7 @@ class GroupTaskService(
     private val activity: GroupActivityService,
     private val publisher: NotificationPublisher,
     private val photos: TaskPhotoRepository,
+    private val subtaskRepo: TaskSubtaskRepository,
 ) {
     @Transactional(readOnly = true)
     fun list(callerId: Long, groupId: Long): GroupTaskListData {
@@ -99,7 +103,12 @@ class GroupTaskService(
         // - Toggling isCompleted: admin OR the current assignee.
         val editingFields = req.title != null || req.description != null ||
             req.dueDate != null || req.priority != null ||
-            req.isAllDay != null || req.timeStart != null || req.timeEnd != null
+            req.isAllDay != null || req.timeStart != null || req.timeEnd != null ||
+            // The recurrence rule, category and steps shape the task the same way the fields above
+            // do, so they sit behind the same admin gate rather than opening a side door.
+            req.recurrence != null || req.recurrenceInterval != null || req.recurrenceByDay != null ||
+            req.recurrenceUntil != null || req.reminderTimes != null ||
+            req.category != null || req.subtasks != null
         if (editingFields && !isAdmin) {
             throw ResponseStatusException(HttpStatus.FORBIDDEN, "Only admins can edit tasks")
         }
@@ -148,7 +157,16 @@ class GroupTaskService(
             req.locationName?.takeIf { it.isNotBlank() }?.let { task.locationName = it }
             req.locationAddress?.takeIf { it.isNotBlank() }?.let { task.locationAddress = it }
         }
+        req.recurrence?.let { task.recurrence = it }
+        req.recurrenceInterval?.let { task.recurrenceInterval = it.coerceAtLeast(1) }
+        req.recurrenceByDay?.let { task.recurrenceByDay = it.takeIf { csv -> csv.isNotBlank() } }
+        req.recurrenceUntil?.let { task.recurrenceUntil = it }
+        req.reminderTimes?.let { task.reminderTimes = it.joinToString(",").takeIf { csv -> csv.isNotBlank() } }
+        req.category?.let { task.category = it }
+        req.customCategoryName?.let { task.customCategoryName = it.takeIf { name -> name.isNotBlank() } }
         val saved = tasks.save(task)
+        // After the save so a brand-new task id is never referenced; mirrors TaskService.update.
+        req.subtasks?.let { reconcileSubtasks(subtaskRepo, saved.id, it) }
         // Activity logging
         if (priorAssignee != saved.assignedToUserId) {
             if (saved.assignedToUserId == null) {
@@ -263,6 +281,20 @@ class GroupTaskService(
             locationLng = locationLng?.toDouble(),
             locationName = locationName,
             locationAddress = locationAddress,
+            isAllDay = isAllDay,
+            category = category,
+            customCategoryName = customCategoryName,
+            recurrence = recurrence,
+            recurrenceInterval = recurrenceInterval,
+            recurrenceByDay = recurrenceByDay,
+            recurrenceUntil = recurrenceUntil,
+            reminderTimes = reminderTimes
+                ?.split(",")
+                ?.mapNotNull { it.trim().toIntOrNull() }
+                .orEmpty(),
+            subtasks = subtaskRepo.findAllByTaskIdOrderByOrderIndexAsc(id).map {
+                SubtaskData(id = it.id, title = it.title, isCompleted = it.isCompleted, orderIndex = it.orderIndex)
+            },
         )
     }
 }

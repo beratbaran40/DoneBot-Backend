@@ -132,39 +132,9 @@ class TaskService(
         return saved.toData()
     }
 
-    /**
-     * Replaces the task's step set with [incoming], preserving server ids where the
-     * client supplied a matching [SubtaskRequest.remoteId]. Steps absent from [incoming]
-     * are deleted; new ones (null remoteId) are inserted. orderIndex is re-packed to the
-     * incoming order so the steps render in the order the client sent them. Called only
-     * when the client sends a non-null `subtasks` list (see TaskRequest.subtasks).
-     */
-    private fun reconcileSubtasks(taskId: Long, incoming: List<SubtaskRequest>) {
-        val existing = subtaskRepo.findAllByTaskIdOrderByOrderIndexAsc(taskId)
-        val existingById = existing.associateBy { it.id }
-        val keptIds = mutableSetOf<Long>()
-        incoming.forEachIndexed { index, req ->
-            val match = req.remoteId?.let { existingById[it] }
-            if (match != null) {
-                match.title = req.title
-                match.isCompleted = req.isCompleted
-                match.orderIndex = index
-                subtaskRepo.save(match)
-                keptIds.add(match.id)
-            } else {
-                val created = subtaskRepo.save(
-                    TaskSubtaskEntity(
-                        taskId = taskId,
-                        title = req.title,
-                        isCompleted = req.isCompleted,
-                        orderIndex = index,
-                    ),
-                )
-                keptIds.add(created.id)
-            }
-        }
-        existing.filter { it.id !in keptIds }.forEach { subtaskRepo.delete(it) }
-    }
+    /** See the free function of the same name — shared with the group task path. */
+    private fun reconcileSubtasks(taskId: Long, incoming: List<SubtaskRequest>) =
+        reconcileSubtasks(subtaskRepo, taskId, incoming)
 
     /**
      * Fires TASK_ASSIGNED to the new assignee when a group task gets a different assignee.
@@ -298,7 +268,13 @@ class TaskService(
         val task = tasks.findById(taskId).orElseThrow {
             ResponseStatusException(HttpStatus.NOT_FOUND, "Task not found")
         }
-        if (task.ownerId != callerId) {
+        // A group task belongs to the group, not to whoever typed it in. Ticking today's occurrence
+        // is the one thing every member must be able to do — the owner-only guard meant a recurring
+        // chore could only ever be completed by its creator.
+        val isGroupMember = task.familyGroupId
+            ?.let { members.findByGroupIdAndUserId(it, callerId) != null }
+            ?: false
+        if (task.ownerId != callerId && !isGroupMember) {
             throw ResponseStatusException(HttpStatus.FORBIDDEN, "Not allowed")
         }
         // Any recurring task tracks completion per-day, not just DAILY ones. The old DAILY-only guard
@@ -327,7 +303,25 @@ class TaskService(
 
     @Transactional(readOnly = true)
     fun listDailyCompletions(callerId: Long, fromDay: Long, toDay: Long): TaskDailyCompletionListData {
-        val items = dailyCompletions.findAllByUserIdAndDateBetween(callerId, fromDay, toDay)
+        val own = dailyCompletions.findAllByUserIdAndDateBetween(callerId, fromDay, toDay)
+        // A group task's occurrence is completed for everyone by whoever ticks it first, so the
+        // by-author filter above would hide a teammate's tick. Fold in every completion on a task
+        // in one of the caller's groups, whoever wrote it.
+        val groupIds = members.findAllByUserId(callerId).map { it.groupId }
+        val groupTaskIds = if (groupIds.isEmpty()) {
+            emptyList()
+        } else {
+            tasks.findAllByFamilyGroupIdIn(groupIds).map { it.id }
+        }
+        val shared = if (groupTaskIds.isEmpty()) {
+            emptyList()
+        } else {
+            dailyCompletions.findAllByTaskIdInAndDateBetween(groupTaskIds, fromDay, toDay)
+        }
+        // The caller's own rows on a group task appear in both lists; key on (taskId, date) because
+        // that pair — not the row id — is what "this occurrence is done" means.
+        val items = (own + shared)
+            .distinctBy { it.taskId to it.date }
             .map { TaskDailyCompletionData(taskId = it.taskId, date = it.date, completedAt = it.completedAt) }
         return TaskDailyCompletionListData(items, items.size)
     }
