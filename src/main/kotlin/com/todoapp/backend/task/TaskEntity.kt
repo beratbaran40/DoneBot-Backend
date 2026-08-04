@@ -99,6 +99,34 @@ class TaskEntity(
     @Column(name = "finished_on")
     var finishedOn: Long? = null,
 
+    /** RRULE INTERVAL: fire every N periods of [recurrence]. 1 = every period, i.e. the legacy rule. */
+    @Column(name = "recurrence_interval", nullable = false)
+    var recurrenceInterval: Int = 1,
+
+    /**
+     * RRULE BYDAY: CSV of java.time.DayOfWeek names ("MONDAY,WEDNESDAY,FRIDAY"). Null = derive the
+     * weekday from [date], which is the legacy WEEKLY behaviour. Only meaningful for WEEKLY.
+     */
+    @Column(name = "recurrence_by_day", length = 64)
+    var recurrenceByDay: String? = null,
+
+    /**
+     * RRULE UNTIL: last epoch day the rule may fire, inclusive. Null = open-ended.
+     *
+     * Deliberately distinct from [finishedOn]: this is the end SCHEDULED at creation ("take this for
+     * a month"), finishedOn is the manual retire. Both cut the rule off, the earlier one wins. See V19.
+     */
+    @Column(name = "recurrence_until")
+    var recurrenceUntil: Long? = null,
+
+    /**
+     * Absolute reminder times of day, CSV of SECOND-of-day ("28800,50400,72000"). Null/blank = the
+     * single [reminderOffsetMinutes] reminder. Stored and synced only — never scheduled here, because
+     * personal-task reminders are client-local exact alarms (see TaskDueSoonJob).
+     */
+    @Column(name = "reminder_times", length = 128)
+    var reminderTimes: String? = null,
+
     @Column(nullable = false, updatable = false)
     var createdAt: Instant = Instant.now(),
 

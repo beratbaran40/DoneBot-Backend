@@ -96,6 +96,11 @@ data class ExportTask(
     val locationAddress: String?,
     val createdAt: String,
     val finishedOn: Long?,
+    val recurrenceInterval: Int,
+    val recurrenceByDay: String?,
+    val recurrenceUntil: Long?,
+    /** CSV of second-of-day, as stored. */
+    val reminderTimes: String?,
 )
 
 data class ExportMembership(
@@ -123,4 +128,8 @@ private fun TaskEntity.toExport() = ExportTask(
     locationAddress = locationAddress,
     createdAt = createdAt.toString(),
     finishedOn = finishedOn,
+    recurrenceInterval = recurrenceInterval,
+    recurrenceByDay = recurrenceByDay,
+    recurrenceUntil = recurrenceUntil,
+    reminderTimes = reminderTimes,
 )

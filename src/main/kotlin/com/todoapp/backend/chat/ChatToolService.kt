@@ -236,6 +236,26 @@ class ChatToolService(
             ?.toBigDecimal()
         val locationLng = args.fields["locationLng"]?.numberValue?.takeIf { it != 0.0 || locationName != null }
             ?.toBigDecimal()
+        val isRecurring = recurrence != Recurrence.NONE
+        // The extended rule is meaningless without a recurrence; dropping it here keeps a model that
+        // sends "every other day" WITHOUT a frequency from producing a task that silently never repeats
+        // on a schedule the user thinks they asked for.
+        val recurrenceInterval = args.fields["recurrenceInterval"]?.numberValue?.toInt()
+            ?.coerceIn(1, MAX_RECURRENCE_INTERVAL)
+            ?.takeIf { isRecurring } ?: 1
+        val recurrenceByDay = args.fields["recurrenceByDay"]?.stringValue?.takeIf { it.isNotBlank() }
+            ?.takeIf { isRecurring && recurrence == Recurrence.WEEKLY }
+            ?.let { normalizeByDay(it) }
+        val recurrenceUntil = args.fields["recurrenceUntil"]?.stringValue?.takeIf { it.isNotBlank() }
+            ?.let { runCatching { LocalDate.parse(it).toEpochDay() }.getOrNull() }
+            ?.takeIf { isRecurring }
+        val reminderTimes = args.fields["reminderTimes"]?.listValue?.valuesList
+            ?.mapNotNull { runCatching { parseTime(it.stringValue) }.getOrNull() }
+            ?.distinct()?.sorted()?.take(MAX_REMINDER_TIMES)
+            ?.takeIf { it.isNotEmpty() && isRecurring }
+        val steps = args.fields["steps"]?.listValue?.valuesList
+            ?.mapNotNull { it.stringValue?.trim()?.takeIf(String::isNotEmpty) }
+            .orEmpty()
 
         val saved = taskRepo.save(
             TaskEntity(
@@ -255,16 +275,31 @@ class ChatToolService(
                 locationLng = locationLng,
                 locationName = locationName,
                 locationAddress = locationAddress,
+                recurrenceInterval = recurrenceInterval,
+                recurrenceByDay = recurrenceByDay,
+                recurrenceUntil = recurrenceUntil,
+                reminderTimes = reminderTimes?.joinToString(","),
             ),
         )
+        steps.forEachIndexed { index, stepTitle ->
+            subtaskRepo.save(TaskSubtaskEntity(taskId = saved.id, title = stepTitle, orderIndex = index))
+        }
         // Write-tool responses omit the numeric id — the model already had it as input
         // (or doesn't need one for confirmation), and we don't want it surfacing in the
         // user-facing reply.
         return objectValue(
             "ok" to boolValue(true),
-            "task" to taskValue(saved, includeId = false),
+            "task" to taskValue(saved, includeId = false, includeSteps = steps.isNotEmpty()),
         )
     }
+
+    /** Keeps only real weekday names, uppercased, in weekday order — the client parses the same CSV. */
+    private fun normalizeByDay(raw: String): String? = raw.split(',')
+        .mapNotNull { runCatching { java.time.DayOfWeek.valueOf(it.trim().uppercase()) }.getOrNull() }
+        .distinct()
+        .sortedBy { it.value }
+        .joinToString(",") { it.name }
+        .takeIf { it.isNotBlank() }
 
     private fun runUpdateTask(userId: Long, args: Struct): Value {
         val taskId = args.fields["taskId"]?.numberValue?.toLong()
@@ -730,6 +765,21 @@ class ChatToolService(
         if (task.locationAddress != null) {
             struct.putFields("locationAddress", stringValue(task.locationAddress!!))
         }
+        // The extended rule must be readable back, or the bot can't answer "how often is this?" or
+        // confirm what it just created beyond the bare frequency.
+        if (task.recurrenceInterval > 1) {
+            struct.putFields("recurrenceInterval", longValue(task.recurrenceInterval.toLong()))
+        }
+        task.recurrenceByDay?.let { struct.putFields("recurrenceByDay", stringValue(it)) }
+        task.recurrenceUntil?.let {
+            struct.putFields("recurrenceUntil", stringValue(LocalDate.ofEpochDay(it).toString()))
+        }
+        task.reminderTimes?.takeIf { it.isNotBlank() }?.let { csv ->
+            val times = csv.split(',').mapNotNull { it.trim().toLongOrNull() }
+            if (times.isNotEmpty()) {
+                struct.putFields("reminderTimes", listValue(times.map { stringValue(formatTime(it)) }))
+            }
+        }
         if (includeSteps) {
             val steps = subtaskRepo.findAllByTaskIdOrderByOrderIndexAsc(task.id)
             if (steps.isNotEmpty()) {
@@ -786,5 +836,9 @@ class ChatToolService(
         private const val MAX_CUSTOM_CATEGORY_NAME = 64
         private const val MAX_LOCATION_NAME = 120
         private const val MAX_LOCATION_ADDRESS = 500
+
+        /** Mirrors the client: interval is bounded by its stepper, reminders by its alarm slots. */
+        private const val MAX_RECURRENCE_INTERVAL = 30
+        private const val MAX_REMINDER_TIMES = 8
     }
 }

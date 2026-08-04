@@ -35,6 +35,25 @@ data class TaskRequest(
      * accidentally wipes another device's steps.
      */
     val subtasks: List<SubtaskRequest>? = null,
+    /** RRULE INTERVAL. Only applied when [recurrenceRuleSet] is true. */
+    val recurrenceInterval: Int? = null,
+    /** RRULE BYDAY as a DayOfWeek-name CSV. Only applied when [recurrenceRuleSet] is true. */
+    @field:Size(max = 64) val recurrenceByDay: String? = null,
+    /** RRULE UNTIL as an epoch day. Only applied when [recurrenceRuleSet] is true. */
+    val recurrenceUntil: Long? = null,
+    /** Absolute reminder times as SECOND-of-day. Only applied when [recurrenceRuleSet] is true. */
+    val reminderTimes: List<Int>? = null,
+    /**
+     * True when the sender understands the extended recurrence rule and the four fields above carry
+     * its authoritative state — **including nulls, which then clear the stored value**.
+     *
+     * Old clients omit it (false) and their nulls are ignored rather than wiping a rule they cannot
+     * represent. This flag exists because [TaskService.update] overwrites most fields unconditionally,
+     * so without it a stale second device would silently erase the user's "for one month" end date on
+     * its next sync. The `?: entity.x` trick used for `recurrence` is not enough here: it makes the
+     * value un-clearable, and clearing an end date is a thing users legitimately do.
+     */
+    val recurrenceRuleSet: Boolean = false,
 )
 
 data class SubtaskRequest(
@@ -78,6 +97,12 @@ data class TaskData(
     val photoUrls: List<String> = emptyList(),
     /** Ordered steps of a staged task. Empty for a plain task. */
     val subtasks: List<SubtaskData> = emptyList(),
+    /** Extended recurrence rule. The defaults describe the legacy "every period, forever" routine. */
+    val recurrenceInterval: Int = 1,
+    val recurrenceByDay: String? = null,
+    val recurrenceUntil: Long? = null,
+    /** Absolute reminder times as SECOND-of-day; empty = the single reminderOffsetMinutes reminder. */
+    val reminderTimes: List<Int> = emptyList(),
 )
 
 data class SubtaskData(

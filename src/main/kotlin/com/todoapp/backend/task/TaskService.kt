@@ -54,6 +54,12 @@ class TaskService(
             locationName = req.locationName?.takeIf { it.isNotBlank() },
             locationAddress = req.locationAddress?.takeIf { it.isNotBlank() },
             finishedOn = req.finishedOn,
+            // No clobber risk on create, so the extended rule is taken verbatim without the
+            // recurrenceRuleSet gate that update() needs.
+            recurrenceInterval = req.recurrenceInterval?.coerceAtLeast(1) ?: 1,
+            recurrenceByDay = req.recurrenceByDay?.takeIf { it.isNotBlank() },
+            recurrenceUntil = req.recurrenceUntil,
+            reminderTimes = req.reminderTimes.toStorageCsv(),
         )
         val saved = try {
             // saveAndFlush so a unique-index violation surfaces HERE (inside the try), not later at commit.
@@ -108,6 +114,14 @@ class TaskService(
         entity.locationName = req.locationName?.takeIf { it.isNotBlank() }
         entity.locationAddress = req.locationAddress?.takeIf { it.isNotBlank() }
         entity.finishedOn = req.finishedOn
+        // Gated, unlike every field above: a client that predates the extended rule sends nulls for
+        // these and must not wipe a rule it cannot represent. See TaskRequest.recurrenceRuleSet.
+        if (req.recurrenceRuleSet) {
+            entity.recurrenceInterval = req.recurrenceInterval?.coerceAtLeast(1) ?: 1
+            entity.recurrenceByDay = req.recurrenceByDay?.takeIf { it.isNotBlank() }
+            entity.recurrenceUntil = req.recurrenceUntil
+            entity.reminderTimes = req.reminderTimes.toStorageCsv()
+        }
         val saved = tasks.save(entity)
         req.subtasks?.let { reconcileSubtasks(saved.id, it) }
         notifyAssignmentIfNeeded(
@@ -265,8 +279,19 @@ class TaskService(
             subtasks = subtaskRepo.findAllByTaskIdOrderByOrderIndexAsc(id).map {
                 SubtaskData(id = it.id, title = it.title, isCompleted = it.isCompleted, orderIndex = it.orderIndex)
             },
+            recurrenceInterval = recurrenceInterval,
+            recurrenceByDay = recurrenceByDay,
+            recurrenceUntil = recurrenceUntil,
+            reminderTimes = reminderTimes.toSecondsOfDay(),
         )
     }
+
+    /** CSV of second-of-day ⇄ list. Unparseable entries are dropped rather than failing the response. */
+    private fun String?.toSecondsOfDay(): List<Int> =
+        this?.split(',')?.mapNotNull { it.trim().toIntOrNull() }.orEmpty()
+
+    private fun List<Int>?.toStorageCsv(): String? =
+        this?.takeIf { it.isNotEmpty() }?.sorted()?.distinct()?.joinToString(",")
 
     @Transactional
     fun setDailyCompletion(callerId: Long, taskId: Long, req: TaskDailyCompletionRequest) {
@@ -276,8 +301,12 @@ class TaskService(
         if (task.ownerId != callerId) {
             throw ResponseStatusException(HttpStatus.FORBIDDEN, "Not allowed")
         }
-        if (task.recurrence != Recurrence.DAILY) {
-            throw ResponseStatusException(HttpStatus.BAD_REQUEST, "Task is not a daily task")
+        // Any recurring task tracks completion per-day, not just DAILY ones. The old DAILY-only guard
+        // silently 400'd every WEEKLY/MONTHLY/YEARLY routine the client pushed, so those completions
+        // never reached the server and were lost on device change — the client sends this for every
+        // `recurrence != NONE` task (SetTaskCompletionUseCase) and retries the rejects forever.
+        if (task.recurrence == Recurrence.NONE) {
+            throw ResponseStatusException(HttpStatus.BAD_REQUEST, "Task is not recurring")
         }
         if (req.completed) {
             val existing = dailyCompletions.findByTaskIdAndDate(taskId, req.date)

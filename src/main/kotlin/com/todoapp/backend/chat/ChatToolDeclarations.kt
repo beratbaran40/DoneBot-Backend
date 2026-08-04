@@ -161,13 +161,68 @@ object ChatToolDeclarations {
                             .build(),
                     )
                     .putProperties(
+                        "recurrenceInterval",
+                        Schema.newBuilder()
+                            .setType(Type.INTEGER)
+                            .setDescription(
+                                "Repeat every N periods of `recurrence`. 1 = every period (default). " +
+                                    "Use 2 for 'every other day', 'gün aşırı', 'every 2 weeks', etc. " +
+                                    "Ignored when recurrence is NONE.",
+                            )
+                            .build(),
+                    )
+                    .putProperties(
+                        "recurrenceByDay",
+                        Schema.newBuilder()
+                            .setType(Type.STRING)
+                            .setDescription(
+                                "WEEKLY only: comma-separated weekday names to fire on, e.g. " +
+                                    "'MONDAY,WEDNESDAY,FRIDAY'. Use for 'Mon/Wed/Fri', 'hafta içi her gün' " +
+                                    "(MONDAY..FRIDAY), 'weekends'. Omit to use the start date's own weekday.",
+                            )
+                            .build(),
+                    )
+                    .putProperties(
+                        "recurrenceUntil",
+                        isoDateSchema(
+                            "Last day the routine repeats, inclusive, ISO YYYY-MM-DD. Use for " +
+                                "'for a month', '1 ay boyunca', 'for 10 days'. Compute it from the start " +
+                                "date. Omit for an open-ended routine.",
+                        ),
+                    )
+                    .putProperties(
+                        "steps",
+                        Schema.newBuilder()
+                            .setType(Type.ARRAY)
+                            .setItems(stringSchema("A single step title."))
+                            .setDescription(
+                                "Ordered step titles, for a task done in stages. May be combined with " +
+                                    "`recurrence`: a repeating task's steps reset every occurrence " +
+                                    "('every morning: water, vitamin, stretch').",
+                            )
+                            .build(),
+                    )
+                    .putProperties(
+                        "reminderTimes",
+                        Schema.newBuilder()
+                            .setType(Type.ARRAY)
+                            .setItems(timeSchema("A time of day, HH:mm."))
+                            .setDescription(
+                                "Absolute times of day to remind at on every occurrence, e.g. " +
+                                    "['08:00','14:00','20:00'] for 'three times a day', 'günde 3 kez'. " +
+                                    "Max 8. Replaces reminderOffsetMinutes when set; needs a recurrence.",
+                            )
+                            .build(),
+                    )
+                    .putProperties(
                         "reminderOffsetMinutes",
                         Schema.newBuilder()
                             .setType(Type.INTEGER)
                             .setDescription(
                                 "Reminder offset in minutes before the task. " +
                                     "0 = no offset (default), 30 = remind 30 min before, etc. " +
-                                    "Set when the user says 'remind me 15 min before', 'hatırlat 10 dakika önce', etc.",
+                                    "Set when the user says 'remind me 15 min before', 'hatırlat 10 dakika önce', etc. " +
+                                    "Use `reminderTimes` instead for a repeating task that reminds at fixed clock times.",
                             )
                             .build(),
                     )

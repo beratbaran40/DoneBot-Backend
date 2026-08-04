@@ -17,6 +17,7 @@ import org.mockito.Mockito.verify
 import org.springframework.dao.DataIntegrityViolationException
 import org.springframework.http.HttpStatus
 import org.springframework.web.server.ResponseStatusException
+import java.util.Optional
 
 /**
  * §4.12 sync-write idempotency — a retried `POST /tasks` carrying the same `clientTaskId` must return
@@ -89,11 +90,80 @@ class TaskServiceTest {
         assertThat(ex.statusCode).isEqualTo(HttpStatus.CONFLICT)
     }
 
+    @Test
+    fun `a weekly routine accepts a per-day completion`() {
+        // Regression: the guard used to demand Recurrence.DAILY, so every WEEKLY/MONTHLY/YEARLY
+        // completion the client pushed came back 400 and was never persisted.
+        val weekly = taskEntity(id = 7L, clientTaskId = null, recurrence = Recurrence.WEEKLY)
+        given(tasks.findById(7L)).willReturn(Optional.of(weekly))
+        given(dailyCompletions.findByTaskIdAndDate(7L, DAY)).willReturn(null)
+
+        service.setDailyCompletion(OWNER, 7L, TaskDailyCompletionRequest(date = DAY, completed = true))
+
+        verify(dailyCompletions, times(1)).save(any())
+    }
+
+    @Test
+    fun `a non-recurring task still rejects a per-day completion`() {
+        val once = taskEntity(id = 8L, clientTaskId = null, recurrence = Recurrence.NONE)
+        given(tasks.findById(8L)).willReturn(Optional.of(once))
+
+        val ex = assertThrows<ResponseStatusException> {
+            service.setDailyCompletion(OWNER, 8L, TaskDailyCompletionRequest(date = DAY, completed = true))
+        }
+
+        assertThat(ex.statusCode).isEqualTo(HttpStatus.BAD_REQUEST)
+        verify(dailyCompletions, never()).save(any())
+    }
+
+    @Test
+    fun `an update from a client that predates the extended rule leaves it untouched`() {
+        val stored = taskEntity(id = 9L, clientTaskId = null, recurrence = Recurrence.DAILY).apply {
+            recurrenceInterval = 2
+            recurrenceUntil = 500L
+            reminderTimes = "28800,50400"
+        }
+        given(tasks.findById(9L)).willReturn(Optional.of(stored))
+        given(tasks.save(any())).willReturn(stored)
+
+        // Old client: no recurrenceRuleSet, every new field null. It must not wipe what it can't model.
+        service.update(OWNER, TaskRequest(id = 9L, title = "Task", date = 0, timeStart = 0, timeEnd = 0))
+
+        assertThat(stored.recurrenceInterval).isEqualTo(2)
+        assertThat(stored.recurrenceUntil).isEqualTo(500L)
+        assertThat(stored.reminderTimes).isEqualTo("28800,50400")
+    }
+
+    @Test
+    fun `an update that sets the rule flag can clear the scheduled end`() {
+        val stored = taskEntity(id = 10L, clientTaskId = null, recurrence = Recurrence.DAILY).apply {
+            recurrenceUntil = 500L
+        }
+        given(tasks.findById(10L)).willReturn(Optional.of(stored))
+        given(tasks.save(any())).willReturn(stored)
+
+        service.update(
+            OWNER,
+            TaskRequest(id = 10L, title = "Task", date = 0, timeStart = 0, timeEnd = 0, recurrenceRuleSet = true),
+        )
+
+        assertThat(stored.recurrenceUntil).isNull()
+    }
+
     private fun request(clientTaskId: String?) =
         TaskRequest(title = "Task", date = 0, timeStart = 0, timeEnd = 0, clientTaskId = clientTaskId)
 
-    private fun taskEntity(id: Long, clientTaskId: String?) =
-        TaskEntity(id = id, ownerId = OWNER, clientTaskId = clientTaskId, title = "Task", date = 0, timeStart = 0, timeEnd = 0)
+    private fun taskEntity(id: Long, clientTaskId: String?, recurrence: Recurrence = Recurrence.NONE) =
+        TaskEntity(
+            id = id,
+            ownerId = OWNER,
+            clientTaskId = clientTaskId,
+            title = "Task",
+            date = 0,
+            timeStart = 0,
+            timeEnd = 0,
+            recurrence = recurrence,
+        )
 
     // Kotlin-friendly Mockito.any() for reference-typed params (returns null; safe on a stubbed mock).
     private fun <T> any(): T = Mockito.any()
@@ -101,5 +171,6 @@ class TaskServiceTest {
     private companion object {
         const val OWNER = 1L
         const val KEY = "client-key-123"
+        const val DAY = 20_000L
     }
 }
