@@ -99,6 +99,18 @@ class TaskEntity(
     @Column(name = "finished_on")
     var finishedOn: Long? = null,
 
+    /**
+     * When this task was marked done, for one-off tasks.
+     *
+     * Distinct from both neighbours it sits between: [finishedOn] retires a recurring rule, and
+     * task_daily_completions records per-day ticks of a routine. Neither says when an ordinary task got
+     * finished, which left "how many tasks were completed yesterday" — the headline number for a to-do
+     * app — unanswerable. Null on rows completed before V27; that history was never timestamped and
+     * inventing it from created_at would be fiction.
+     */
+    @Column(name = "completed_at", nullable = true)
+    var completedAt: java.time.Instant? = null,
+
     /** RRULE INTERVAL: fire every N periods of [recurrence]. 1 = every period, i.e. the legacy rule. */
     @Column(name = "recurrence_interval", nullable = false)
     var recurrenceInterval: Int = 1,

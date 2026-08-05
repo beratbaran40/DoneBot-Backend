@@ -9,6 +9,7 @@ import org.springframework.http.HttpStatus
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
 import org.springframework.web.server.ResponseStatusException
+import java.time.Instant
 
 @Service
 class TaskService(
@@ -40,6 +41,8 @@ class TaskService(
             timeStart = req.timeStart,
             timeEnd = req.timeEnd,
             isCompleted = req.isCompleted,
+            // A task can arrive already done — the client syncs offline completions this way.
+            completedAt = if (req.isCompleted) Instant.now() else null,
             isSecret = req.isSecret,
             familyGroupId = req.familyGroupId,
             assignedToUserId = req.assignedToUserId,
@@ -94,6 +97,14 @@ class TaskService(
         entity.date = req.date
         entity.timeStart = req.timeStart
         entity.timeEnd = req.timeEnd
+        // Stamp only on the false→true edge, and clear on true→false. Writing Instant.now() on every
+        // update would re-date a task each time anything about it changed — an edit to the title would
+        // silently move a week-old completion into today and inflate today's count.
+        if (req.isCompleted && !entity.isCompleted) {
+            entity.completedAt = Instant.now()
+        } else if (!req.isCompleted) {
+            entity.completedAt = null
+        }
         entity.isCompleted = req.isCompleted
         entity.isSecret = req.isSecret
         entity.priority = req.priority
