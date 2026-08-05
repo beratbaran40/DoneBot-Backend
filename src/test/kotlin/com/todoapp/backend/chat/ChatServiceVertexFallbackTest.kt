@@ -5,6 +5,7 @@ import com.google.api.gax.rpc.ApiExceptionFactory
 import com.google.cloud.vertexai.api.Candidate
 import com.google.cloud.vertexai.api.GenerateContentResponse
 import com.google.cloud.vertexai.generativeai.GenerativeModel
+import com.todoapp.backend.group.GroupMemberRepository
 import com.todoapp.backend.task.TaskRepository
 import com.todoapp.backend.user.UserRepository
 import io.grpc.Status
@@ -33,6 +34,7 @@ class ChatServiceVertexFallbackTest {
     private val vertex: VertexAiClient = Mockito.mock(VertexAiClient::class.java)
     private val tools: ChatToolService = Mockito.mock(ChatToolService::class.java)
     private val taskRepo: TaskRepository = Mockito.mock(TaskRepository::class.java)
+    private val members: GroupMemberRepository = Mockito.mock(GroupMemberRepository::class.java)
     private val users: UserRepository = Mockito.mock(UserRepository::class.java)
     private val tracker: ChatUsageTracker = Mockito.mock(ChatUsageTracker::class.java)
 
@@ -50,13 +52,14 @@ class ChatServiceVertexFallbackTest {
 
     private val props = ChatProperties()
 
-    private val service = ChatService(vertex, tools, taskRepo, users, props, tracker, chatUsage, settings)
+    private val service = ChatService(vertex, tools, taskRepo, members, users, props, tracker, chatUsage, settings)
 
     @BeforeEach
     fun setUp() {
         given(vertex.isReady).willReturn(true)
         given(vertex.model(anyString())).willReturn(Mockito.mock(GenerativeModel::class.java))
         given(taskRepo.findAllByOwnerIdAndFamilyGroupIdIsNull(anyLong())).willReturn(emptyList())
+        given(members.findAllByUserId(anyLong())).willReturn(emptyList())
         given(tracker.tryAcquireGlobalDaily(anyInt())).willReturn(true)
         given(settings.isEnabled(com.todoapp.backend.settings.AppSetting.CHAT_ENABLED)).willReturn(true)
         given(settings.intValue(com.todoapp.backend.settings.AppSetting.CHAT_MAX_GLOBAL_DAILY_REQUESTS))
@@ -172,7 +175,9 @@ class ChatServiceVertexFallbackTest {
 
     @Test
     fun `an exhausted deadline short-circuits to 503 without spending a Vertex call`() {
-        val service = ChatService(vertex, tools, taskRepo, users, ChatProperties(turnDeadlineMs = 1), tracker, chatUsage, settings)
+        val service = ChatService(
+            vertex, tools, taskRepo, members, users, ChatProperties(turnDeadlineMs = 1), tracker, chatUsage, settings,
+        )
 
         val ex = assertThrows<ResponseStatusException> { service.reply(USER_ID, request()) }
 
@@ -184,7 +189,9 @@ class ChatServiceVertexFallbackTest {
     @Test
     fun `a generate hanging past the deadline is cut and maps to 503`() {
         // Budget over MIN_ROUND_BUDGET_MS so the round actually starts; generate hangs way past it.
-        val service = ChatService(vertex, tools, taskRepo, users, ChatProperties(turnDeadlineMs = 2_500), tracker, chatUsage, settings)
+        val service = ChatService(
+            vertex, tools, taskRepo, members, users, ChatProperties(turnDeadlineMs = 2_500), tracker, chatUsage, settings,
+        )
         given(vertex.generate(any(), any())).willAnswer {
             Thread.sleep(30_000)
             error("should have been cancelled by the deadline")

@@ -1,6 +1,8 @@
 package com.todoapp.backend.chat
 
 import jakarta.validation.Valid
+import jakarta.validation.constraints.Max
+import jakarta.validation.constraints.Min
 import jakarta.validation.constraints.NotBlank
 import jakarta.validation.constraints.Pattern
 import jakarta.validation.constraints.Size
@@ -19,10 +21,27 @@ data class ChatMessageRequest(
     @field:Size(max = MAX_HISTORY_TURNS)
     @field:Valid
     val history: List<ChatHistoryTurn> = emptyList(),
+
+    /**
+     * The Activity health-points bar in HALF-heart units, 0..[MAX_HALF_HEARTS] (12 hearts).
+     *
+     * Client-computed on purpose: `ComputeHealthPointsUseCase` folds device-local completion history
+     * over a persisted checkpoint, so the server has no way to derive it. We take the number and render
+     * one line of the `[Context]` block from it.
+     *
+     * Nullable with a default — that is what lets the backend deploy before the client ships it, and
+     * what keeps every already-installed client working. Null simply omits the Health line.
+     */
+    @field:Min(0)
+    @field:Max(MAX_HALF_HEARTS.toLong())
+    val healthHalfHearts: Int? = null,
 ) {
     companion object {
         const val MAX_PROMPT_LENGTH = 1000
         const val MAX_HISTORY_TURNS = 10
+
+        /** 12 hearts, tracked in halves — mirrors the client's `MAX_HALF_HEARTS`. */
+        const val MAX_HALF_HEARTS = 24
     }
 }
 
@@ -70,4 +89,12 @@ data class ChatTurnMeta(
     val refused: Boolean,
     /** Wall-clock duration on the server, ms. */
     val serverMs: Long,
+    /**
+     * Names of the tools this turn executed, in call order. The client uses it to decide whether the
+     * turn changed anything server-side: before this existed it re-synced on `roundTrips > 1`, which is
+     * true of every read-tool turn, so "what's due today?" cost a full task fetch over the network.
+     *
+     * Defaulted so an older client ignoring it and a newer client talking to an older backend both work.
+     */
+    val toolsCalled: List<String> = emptyList(),
 )

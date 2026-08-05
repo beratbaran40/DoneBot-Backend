@@ -9,9 +9,12 @@ import com.google.cloud.vertexai.api.FunctionResponse
 import com.google.cloud.vertexai.api.GenerateContentResponse
 import com.google.cloud.vertexai.api.Part
 import com.google.cloud.vertexai.generativeai.GenerativeModel
+import com.todoapp.backend.group.GroupMemberRepository
 import com.todoapp.backend.metrics.ChatUsageRecorder
 import com.todoapp.backend.settings.AppSetting
 import com.todoapp.backend.settings.AppSettingsService
+import com.todoapp.backend.task.Recurrence
+import com.todoapp.backend.task.TaskEntity
 import com.todoapp.backend.task.TaskRepository
 import com.todoapp.backend.user.UserRepository
 import jakarta.annotation.PreDestroy
@@ -50,6 +53,8 @@ class ChatService(
     private val vertex: VertexAiClient,
     private val tools: ChatToolService,
     private val taskRepo: TaskRepository,
+    // Only used to resolve the caller's groups for the context preamble's read-only group summary.
+    private val members: GroupMemberRepository,
     private val users: UserRepository,
     private val props: ChatProperties,
     private val tracker: ChatUsageTracker,
@@ -118,7 +123,7 @@ class ChatService(
         val systemInstruction = if (locale == "tr") systemInstructionTr else systemInstructionEn
         val model = vertex.model(systemInstruction)
 
-        val preamble = buildContextPreamble(userId)
+        val preamble = buildContextPreamble(userId, request.healthHalfHearts)
         val initialUserText = "$preamble\n\n${request.prompt}"
         val history = trimAndConvertHistory(request.history) + userContent(initialUserText)
 
@@ -186,7 +191,12 @@ class ChatService(
                 tracker.record(userId)
                 return ChatMessageResponse(
                     text = safetyRefusalMessage(locale),
-                    meta = ChatTurnMeta(roundTrips = roundTrips, refused = true, serverMs = ms),
+                    meta = ChatTurnMeta(
+                        roundTrips = roundTrips,
+                        refused = true,
+                        serverMs = ms,
+                        toolsCalled = toolsCalled.toList(),
+                    ),
                 )
             }
             val parts = candidate.content.partsList
@@ -215,6 +225,7 @@ class ChatService(
                         roundTrips = roundTrips,
                         refused = refused,
                         serverMs = ms,
+                        toolsCalled = toolsCalled.toList(),
                     ),
                 )
             }
@@ -241,7 +252,12 @@ class ChatService(
                 tracker.record(userId)
                 return ChatMessageResponse(
                     text = fallback,
-                    meta = ChatTurnMeta(roundTrips = roundTrips, refused = false, serverMs = ms),
+                    meta = ChatTurnMeta(
+                        roundTrips = roundTrips,
+                        refused = false,
+                        serverMs = ms,
+                        toolsCalled = toolsCalled.toList(),
+                    ),
                 )
             }
 
@@ -426,7 +442,20 @@ class ChatService(
         return out.replace(MULTISPACE, " ").trim()
     }
 
-    private fun buildContextPreamble(userId: Long): String {
+    /**
+     * The `[Context: …]` block prepended to every user turn. It exists to answer the common questions
+     * without a tool round-trip, so it is paid for on EVERY request — which is why the task lines are
+     * one line each and capped low, and the rest is one-line summaries. Adding hearts, routines and the
+     * group summary while halving the task cap and compressing each line is roughly token-neutral.
+     *
+     * The `#id` stays. The model chains it straight into setTaskCompletion / updateTask, and
+     * [sanitizeUserFacingText] already strips ids out of the reply — dropping them here would buy
+     * nothing and cost a findTaskByTitle round-trip on the single most common mutation.
+     *
+     * [healthHalfHearts] comes from the client (see `ChatMessageRequest`); null means an older client,
+     * and the Health line is simply omitted rather than guessed at.
+     */
+    private fun buildContextPreamble(userId: Long, healthHalfHearts: Int?): String {
         val today = LocalDate.now()
         val todayEpoch = today.toEpochDay()
         val tomorrowEpoch = today.plusDays(1).toEpochDay()
@@ -436,31 +465,56 @@ class ChatService(
         val tomorrowCount = tasks.count { it.date == tomorrowEpoch }
         val overdueCount = tasks.count { !it.isCompleted && it.date < todayEpoch }
         val weeklyDone = tasks.count { it.isCompleted && it.date in weekAgoEpoch..todayEpoch }
+        val activeRoutines = tasks.count { it.recurrence != Recurrence.NONE && it.finishedOn == null }
+        val finishedRoutines = tasks.count { it.finishedOn != null }
+        val groupIds = members.findAllByUserId(userId).map { it.groupId }
+        val groupTasks = if (groupIds.isEmpty()) emptyList() else taskRepo.findAllByFamilyGroupIdIn(groupIds)
+        val groupPending = groupTasks.count { !it.isCompleted }
+        val groupMine = groupTasks.count { !it.isCompleted && it.assignedToUserId == userId }
 
         return buildString {
             append("[Context: Today is ").append(today).append(" (").append(today.dayOfWeek).append(").\n")
             if (tasksToday.isEmpty()) {
                 append("Today: no tasks.\n")
             } else {
-                append("Today: ").append(tasksToday.size).append(" tasks:\n")
-                tasksToday.take(MAX_PREAMBLE_TASKS).forEach { task ->
-                    val start = String.format("%02d:%02d", task.timeStart / 3600, (task.timeStart / 60) % 60)
-                    val end = String.format("%02d:%02d", task.timeEnd / 3600, (task.timeEnd / 60) % 60)
-                    append("  #").append(task.id)
-                    append(" \"").append(task.title).append("\" ")
-                    append(start).append('-').append(end)
-                    append(" [").append(if (task.isCompleted) "completed" else "pending").append("]\n")
-                }
+                append("Today (").append(tasksToday.size).append("):\n")
+                tasksToday.take(MAX_PREAMBLE_TASKS).forEach { append(compactTaskLine(it)).append('\n') }
                 if (tasksToday.size > MAX_PREAMBLE_TASKS) {
-                    append("  (and ").append(tasksToday.size - MAX_PREAMBLE_TASKS)
-                    append(" more — call getTodaysTasks for full list)\n")
+                    append("(+").append(tasksToday.size - MAX_PREAMBLE_TASKS)
+                    append(" more — call getTodaysTasks)\n")
                 }
             }
-            append("Tomorrow: ").append(tomorrowCount).append(" tasks scheduled.\n")
-            append("Overdue: ").append(overdueCount).append(" tasks past due.\n")
-            append("Completed this week: ").append(weeklyDone).append(" tasks.\n")
+            append("Tomorrow: ").append(tomorrowCount)
+            append(" | Overdue: ").append(overdueCount)
+            append(" | Done this week: ").append(weeklyDone).append('\n')
+            healthHalfHearts?.let { append("Health: ").append(heartsLabel(it)).append("/12 hearts.\n") }
+            append("Routines: ").append(activeRoutines).append(" active, ")
+            append(finishedRoutines).append(" finished.\n")
+            if (groupIds.isNotEmpty()) {
+                append("Groups: ").append(groupIds.size).append(" group(s), ").append(groupPending)
+                append(" open shared tasks (").append(groupMine).append(" assigned to you) — READ-ONLY.\n")
+            }
             append("]")
         }
+    }
+
+    /** One line per task: `#12 Buy milk 09:00-09:30 pending`. All-day and repeat inline, not bracketed. */
+    private fun compactTaskLine(task: TaskEntity): String = buildString {
+        append('#').append(task.id).append(' ').append(task.title)
+        if (task.isAllDay) {
+            append(" all-day")
+        } else {
+            append(' ').append(String.format("%02d:%02d", task.timeStart / 3600, (task.timeStart / 60) % 60))
+            append('-').append(String.format("%02d:%02d", task.timeEnd / 3600, (task.timeEnd / 60) % 60))
+        }
+        if (task.recurrence != Recurrence.NONE) append(' ').append(task.recurrence.name.lowercase())
+        append(if (task.isCompleted) " done" else " pending")
+    }
+
+    /** Mirrors the client's `common/HeartsFormat.heartsLabel` — both must render the same number. */
+    private fun heartsLabel(halfHearts: Int): String {
+        val clamped = halfHearts.coerceIn(0, ChatMessageRequest.MAX_HALF_HEARTS)
+        return if (clamped % 2 == 1) "${clamped / 2}½" else "${clamped / 2}"
     }
 
     private fun trimAndConvertHistory(history: List<ChatHistoryTurn>): List<Content> {
@@ -503,7 +557,9 @@ class ChatService(
         ClassPathResource(path).inputStream.use { it.readAllBytes().toString(StandardCharsets.UTF_8) }
 
     companion object {
-        private const val MAX_PREAMBLE_TASKS = 20
+        // Halved when the block gained its hearts/routines/groups summary lines: the model calls
+        // getTodaysTasks for a longer list anyway, and this is paid for on every single turn.
+        private const val MAX_PREAMBLE_TASKS = 10
         private const val MAX_HISTORY_TURN_CHARS = 4_000
 
         // Don't start a Vertex round with less budget than this — a call that would be cancelled
