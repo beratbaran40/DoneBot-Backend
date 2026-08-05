@@ -35,9 +35,22 @@ class ChatServiceVertexFallbackTest {
     private val taskRepo: TaskRepository = Mockito.mock(TaskRepository::class.java)
     private val users: UserRepository = Mockito.mock(UserRepository::class.java)
     private val tracker: ChatUsageTracker = Mockito.mock(ChatUsageTracker::class.java)
+
+    // A real recorder over an inline executor and a collecting writer, rather than a mock: these tests
+    // already drive every Vertex failure branch, so wiring it for real also proves the durable usage
+    // counters are written on the failure paths — the exact gap this recorder exists to close.
+    private val recordedUsage = mutableListOf<com.todoapp.backend.metrics.ChatUsageDelta>()
+    private val chatUsage = com.todoapp.backend.metrics.ChatUsageRecorder(
+        { _, _, delta -> recordedUsage += delta },
+        java.util.concurrent.Executor { it.run() },
+    )
+
+    private val settings: com.todoapp.backend.settings.AppSettingsService =
+        Mockito.mock(com.todoapp.backend.settings.AppSettingsService::class.java)
+
     private val props = ChatProperties()
 
-    private val service = ChatService(vertex, tools, taskRepo, users, props, tracker)
+    private val service = ChatService(vertex, tools, taskRepo, users, props, tracker, chatUsage, settings)
 
     @BeforeEach
     fun setUp() {
@@ -45,6 +58,22 @@ class ChatServiceVertexFallbackTest {
         given(vertex.model(anyString())).willReturn(Mockito.mock(GenerativeModel::class.java))
         given(taskRepo.findAllByOwnerIdAndFamilyGroupIdIsNull(anyLong())).willReturn(emptyList())
         given(tracker.tryAcquireGlobalDaily(anyInt())).willReturn(true)
+        given(settings.isEnabled(com.todoapp.backend.settings.AppSetting.CHAT_ENABLED)).willReturn(true)
+        given(settings.intValue(com.todoapp.backend.settings.AppSetting.CHAT_MAX_GLOBAL_DAILY_REQUESTS))
+            .willReturn(5000)
+    }
+
+    @Test
+    fun `the operator kill switch degrades to the same 503 the client already understands`() {
+        // A new error string here would reach users as a raw error instead of the "AI is taking a break"
+        // banner, because the client keys on this exact marker.
+        given(settings.isEnabled(com.todoapp.backend.settings.AppSetting.CHAT_ENABLED)).willReturn(false)
+
+        val ex = assertThrows<ResponseStatusException> { service.reply(USER_ID, request()) }
+
+        assertThat(ex.statusCode).isEqualTo(HttpStatus.SERVICE_UNAVAILABLE)
+        assertThat(ex.reason).contains("vertex_unavailable")
+        assertThat(recordedUsage.single().errors).isEqualTo(1)
     }
 
     @Test
@@ -89,6 +118,32 @@ class ChatServiceVertexFallbackTest {
     }
 
     @Test
+    fun `a failed turn is recorded as a durable error instead of vanishing`() {
+        // Before ChatUsageRecorder, every branch above left no trace but a log line: the in-memory
+        // tracker was only touched on the success paths, so chat error rate could not be measured at all.
+        stubGenerateToThrow(vertexException(Status.Code.UNAVAILABLE))
+
+        assertThrows<ResponseStatusException> { service.reply(USER_ID, request()) }
+
+        assertThat(recordedUsage).hasSize(1)
+        assertThat(recordedUsage.single().requests).isEqualTo(1)
+        assertThat(recordedUsage.single().errors).isEqualTo(1)
+        assertThat(recordedUsage.single().refusals).isEqualTo(0)
+    }
+
+    @Test
+    fun `a rejection by the global cost cap is recorded even though vertex was never called`() {
+        // This branch returns before logTurn, so it carries its own record; otherwise the cost
+        // circuit-breaker firing would be invisible on the ops screen.
+        given(tracker.tryAcquireGlobalDaily(anyInt())).willReturn(false)
+
+        assertThrows<ResponseStatusException> { service.reply(USER_ID, request()) }
+
+        assertThat(recordedUsage).hasSize(1)
+        assertThat(recordedUsage.single().errors).isEqualTo(1)
+    }
+
+    @Test
     fun `a safety-blocked candidate returns a localized refusal, not a 502`() {
         val blocked = GenerateContentResponse.newBuilder()
             .addCandidates(Candidate.newBuilder().setFinishReason(Candidate.FinishReason.SAFETY).build())
@@ -117,7 +172,7 @@ class ChatServiceVertexFallbackTest {
 
     @Test
     fun `an exhausted deadline short-circuits to 503 without spending a Vertex call`() {
-        val service = ChatService(vertex, tools, taskRepo, users, ChatProperties(turnDeadlineMs = 1), tracker)
+        val service = ChatService(vertex, tools, taskRepo, users, ChatProperties(turnDeadlineMs = 1), tracker, chatUsage, settings)
 
         val ex = assertThrows<ResponseStatusException> { service.reply(USER_ID, request()) }
 
@@ -129,7 +184,7 @@ class ChatServiceVertexFallbackTest {
     @Test
     fun `a generate hanging past the deadline is cut and maps to 503`() {
         // Budget over MIN_ROUND_BUDGET_MS so the round actually starts; generate hangs way past it.
-        val service = ChatService(vertex, tools, taskRepo, users, ChatProperties(turnDeadlineMs = 2_500), tracker)
+        val service = ChatService(vertex, tools, taskRepo, users, ChatProperties(turnDeadlineMs = 2_500), tracker, chatUsage, settings)
         given(vertex.generate(any(), any())).willAnswer {
             Thread.sleep(30_000)
             error("should have been cancelled by the deadline")

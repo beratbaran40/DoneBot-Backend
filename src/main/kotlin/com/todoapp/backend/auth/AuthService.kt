@@ -1,8 +1,11 @@
 package com.todoapp.backend.auth
 
 import com.todoapp.backend.auth.oauth.GoogleAuthService
+import com.todoapp.backend.settings.AppSetting
+import com.todoapp.backend.settings.AppSettingsService
 import com.todoapp.backend.user.UserEntity
 import com.todoapp.backend.user.UserRepository
+import com.todoapp.backend.user.UserStatus
 import com.todoapp.backend.user.UserSummary
 import com.todoapp.backend.user.toDto
 import org.slf4j.LoggerFactory
@@ -27,6 +30,7 @@ class AuthService(
     private val passwordEncoder: PasswordEncoder,
     private val google: GoogleAuthService,
     private val mailService: MailService,
+    private val settings: AppSettingsService,
     @Value("\${app.password-reset.deep-link}") private val resetDeepLink: String,
     @Value("\${app.password-reset.web-link:}") private val resetWebLink: String,
     @Value("\${app.password-reset.ttl-minutes}") private val resetTtlMinutes: Long,
@@ -36,6 +40,7 @@ class AuthService(
 
     @Transactional
     fun register(req: RegisterRequest): AuthResponseData {
+        requireRegistrationOpen()
         if (users.existsByEmail(req.email)) throw AuthException("Email already registered")
         val user = users.save(
             UserEntity(
@@ -55,8 +60,35 @@ class AuthService(
             errorCode = oauthAccountErrorCode(creds.providersCsv),
         )
         if (!passwordEncoder.matches(req.password, hash)) throw AuthException("Invalid credentials")
+        requireNotSuspended(creds.status)
         val summary = users.findSummaryById(creds.id) ?: throw AuthException("User not found")
         return issueTokenPair(summary)
+    }
+
+    /**
+     * Suspension is enforced at the three points where a session is created or extended, and nowhere
+     * else. It deliberately does NOT check on every API request: that would add a database read to the
+     * hot path of every call the app makes, which on a serverless Postgres is real cost, to close a
+     * window that closes itself.
+     *
+     * Suspending revokes every refresh token, so an already-issued access token is the only thing left
+     * — and it expires within the one-hour TTL. Shortening that TTL to narrow the window would multiply
+     * refresh traffic for every user in order to speed up a rare moderation action; the hour is the
+     * better trade, and it is a bounded, documented one rather than an accident.
+     */
+    private fun requireNotSuspended(status: String) {
+        if (status == UserStatus.SUSPENDED.name) {
+            // An AuthException maps to 401 through AuthController, which is what the Android client's
+            // OkHttp Authenticator already knows how to handle. Inventing a new status code here would
+            // put the live app on an untested error path.
+            throw AuthException("This account has been suspended.", errorCode = "account_suspended")
+        }
+    }
+
+    private fun requireRegistrationOpen() {
+        if (!settings.isEnabled(AppSetting.REGISTRATION_ENABLED)) {
+            throw AuthException("Registration is temporarily closed.", errorCode = "registration_closed")
+        }
     }
 
     /** Builds a stable client-facing code naming the provider, e.g. "oauth_account_google". */
@@ -75,6 +107,10 @@ class AuthService(
 
     private fun upsertOAuthUser(email: String, displayName: String, avatarUrl: String?, provider: String): AuthResponseData {
         val existing = users.findByEmail(email)
+        // Google sign-in creates accounts too, so gating only /auth/register would be a half-switch:
+        // registration would look closed while the most common signup path stayed wide open.
+        if (existing == null) requireRegistrationOpen()
+        existing?.let { requireNotSuspended(it.status) }
         val user = if (existing != null) {
             if (provider !in existing.providers) {
                 existing.providersCsv = (existing.providers + provider).joinToString(",")
@@ -104,6 +140,10 @@ class AuthService(
         record.revoked = true
         refreshTokens.save(record)
         val summary = users.findSummaryById(record.userId) ?: throw AuthException("User not found")
+        // The load-bearing check: suspending revokes every refresh token, but a token issued moments
+        // earlier would still be in flight. Refusing here is what makes suspension take effect within
+        // one access-token lifetime rather than thirty days.
+        requireNotSuspended(summary.status)
         val pair = issueTokenPair(summary)
         return RefreshTokenData(pair.accessToken, pair.refreshToken, pair.expiresIn)
     }

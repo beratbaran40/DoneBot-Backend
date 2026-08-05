@@ -50,6 +50,17 @@ class ChatUsageTracker {
         return count <= limit
     }
 
+    /**
+     * Requests counted against today's global budget, for the admin ops screen.
+     *
+     * Reads the live in-memory counter rather than chat_usage_daily on purpose: this is the number the
+     * circuit-breaker actually compares against, so showing anything else would let the panel disagree
+     * with the behaviour it is meant to explain. It resets on restart and at UTC midnight, exactly like
+     * the gate it mirrors.
+     */
+    fun globalDailyUsed(): Long =
+        if (globalDay.get() == LocalDate.now(ZoneOffset.UTC)) globalDailyCount.get() else 0L
+
     companion object {
         private const val LOG_EVERY = 10L
     }

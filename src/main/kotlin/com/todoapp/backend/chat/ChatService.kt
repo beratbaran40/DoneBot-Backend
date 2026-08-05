@@ -9,6 +9,9 @@ import com.google.cloud.vertexai.api.FunctionResponse
 import com.google.cloud.vertexai.api.GenerateContentResponse
 import com.google.cloud.vertexai.api.Part
 import com.google.cloud.vertexai.generativeai.GenerativeModel
+import com.todoapp.backend.metrics.ChatUsageRecorder
+import com.todoapp.backend.settings.AppSetting
+import com.todoapp.backend.settings.AppSettingsService
 import com.todoapp.backend.task.TaskRepository
 import com.todoapp.backend.user.UserRepository
 import jakarta.annotation.PreDestroy
@@ -50,6 +53,8 @@ class ChatService(
     private val users: UserRepository,
     private val props: ChatProperties,
     private val tracker: ChatUsageTracker,
+    private val chatUsage: ChatUsageRecorder,
+    private val settings: AppSettingsService,
 ) {
     private val log = LoggerFactory.getLogger(ChatService::class.java)
 
@@ -71,6 +76,10 @@ class ChatService(
 
     fun reply(userId: Long, request: ChatMessageRequest): ChatMessageResponse {
         if (!vertex.isReady) {
+            // Recorded even though nothing was spent: the user asked and was refused. If a bad deploy
+            // ever drops the Vertex credentials, the ops screen should read "chat is 100% failing"
+            // rather than "chat had no traffic".
+            chatUsage.recordRejected(userId)
             throw ResponseStatusException(
                 HttpStatus.SERVICE_UNAVAILABLE,
                 "Chat is not configured on this server (vertex.project-id missing).",
@@ -83,8 +92,26 @@ class ChatService(
         // §4.10: global (all-users) daily ceiling — a coarse circuit-breaker against a runaway Vertex
         // bill (per-user rate-limit caps individuals, not total spend). Over the cap → 503 with the
         // same marker the client already renders as a "service busy" banner (§7.13).
-        if (!tracker.tryAcquireGlobalDaily(props.maxGlobalDailyRequests)) {
-            log.warn("ChatGlobalCap hit — rejecting chat user={} limit={}", userId, props.maxGlobalDailyRequests)
+        // Operator kill switch, checked before the global budget is consumed and before the context
+        // preamble's database reads — a disabled request should burn neither.
+        //
+        // It reuses vertexUnavailableMessage verbatim rather than inventing a new string: the Android
+        // client greps for the [vertex_unavailable] marker to show its "AI is taking a break" banner, so
+        // a new message would surface as a raw error to every user the moment chat is switched off.
+        if (!settings.isEnabled(AppSetting.CHAT_ENABLED)) {
+            log.warn("ChatDisabled — rejecting chat user={} (app_settings.chat_enabled=false)", userId)
+            chatUsage.recordRejected(userId)
+            throw ResponseStatusException(HttpStatus.SERVICE_UNAVAILABLE, vertexUnavailableMessage(locale))
+        }
+
+        // Read from app_settings rather than the static property so the ceiling can be dropped mid
+        // incident without a redeploy.
+        val globalDailyLimit = settings.intValue(AppSetting.CHAT_MAX_GLOBAL_DAILY_REQUESTS)
+        if (!tracker.tryAcquireGlobalDaily(globalDailyLimit)) {
+            log.warn("ChatGlobalCap hit — rejecting chat user={} limit={}", userId, globalDailyLimit)
+            // This branch returns before logTurn is ever reached, so it needs its own record — otherwise
+            // the cost circuit-breaker firing would leave no trace anywhere but a log line.
+            chatUsage.recordRejected(userId)
             throw ResponseStatusException(HttpStatus.SERVICE_UNAVAILABLE, vertexUnavailableMessage(locale))
         }
 
@@ -370,6 +397,20 @@ class ChatService(
             ms,
             refused,
             error ?: "null",
+        )
+        // Durable counterpart to the log line above. Hooked in HERE, rather than at each of the eight
+        // return/throw sites, because logTurn is already the single funnel every exit path passes
+        // through — failVertex delegates to it too. That makes it structurally impossible to add a new
+        // exit path that logs its cost but forgets to record it, which is exactly how the pre-existing
+        // gap arose: tracker.record() sat on the success paths only, so every outage, quota rejection
+        // and deadline abort was invisible and the error rate was unmeasurable.
+        chatUsage.recordTurn(
+            userId = userId,
+            promptTokens = promptTokens,
+            responseTokens = responseTokens,
+            serverMs = ms,
+            refused = refused,
+            error = error,
         )
     }
 
