@@ -31,6 +31,10 @@
             --card: #EDF4FF;
             --card-border: #A9BAFF;
             --surface: #FFFAF0;
+            --badge-bg: #0F1116;
+            --badge-bg-hover: #1C212B;
+            --badge-border: rgba(255, 255, 255, 0.14);
+            --badge-border-hover: rgba(255, 255, 255, 0.28);
             --shadow: 0 4px 14px rgba(69, 102, 236, 0.10);
             --shadow-soft: 0 2px 8px rgba(69, 102, 236, 0.06);
             --radius-card: 16px;
@@ -47,6 +51,10 @@
                 --card: #1A1D24;
                 --card-border: #3D6A9E;
                 --surface: #16171B;
+                /* The pill stays black (brand), so on a near-black page only the stroke can
+                   separate it — 0.14 alpha lands at 1.8:1, 0.42 clears the 3:1 bar. */
+                --badge-border: rgba(255, 255, 255, 0.42);
+                --badge-border-hover: rgba(255, 255, 255, 0.60);
                 --shadow: 0 4px 14px rgba(0, 0, 0, 0.45);
                 --shadow-soft: 0 2px 8px rgba(0, 0, 0, 0.30);
             }
@@ -160,19 +168,29 @@
             display: block;
         }
 
-        /* "Coming soon to Google Play" badge (swap for the real badge + link at launch) */
+        /* "Get it on Google Play" badge — links to the live listing */
         .badge {
             display: inline-flex;
             align-items: center;
             gap: 10px;
-            background: #0F1116;
+            background: var(--badge-bg);
             color: #fff;
             border-radius: 12px;
             padding: 10px 18px;
-            border: 1px solid rgba(255, 255, 255, 0.14);
-            cursor: default;
+            border: 1px solid var(--badge-border);
             user-select: none;
+            transition: background 150ms, border-color 150ms, transform 150ms, box-shadow 150ms;
         }
+        /* Needs to out-specify `a:hover`, which would otherwise repaint the pill text with --accent */
+        .badge:hover,
+        .badge:focus-visible {
+            background: var(--badge-bg-hover);
+            color: #fff;
+            border-color: var(--badge-border-hover);
+            transform: translateY(-1px);
+            box-shadow: var(--shadow);
+        }
+        .badge:focus-visible { outline: 2px solid var(--primary); outline-offset: 3px; }
         .badge .play { width: auto; height: 24px; flex-shrink: 0; display: block; }
         .badge-text { display: flex; flex-direction: column; line-height: 1.15; text-align: left; }
         .badge-text small { font-size: 10px; letter-spacing: 0.6px; text-transform: uppercase; opacity: 0.85; }
@@ -357,13 +375,17 @@
             DoneBot helps you plan tasks, focus with Pomodoro, collaborate with family, and get more done — guided by a friendly AI assistant.
         </p>
         <div class="hero-cta">
-            <span class="badge" role="img" aria-label="Coming soon to Google Play">
+            <a class="badge" href="https://play.google.com/store/apps/details?id=com.todoapp.mobile"
+               target="_blank" rel="noopener noreferrer"
+               aria-label="Get DoneBot on Google Play"
+               data-lang-label-en="Get DoneBot on Google Play"
+               data-lang-label-tr="DoneBot'u Google Play'den indir">
                 <img class="play" src="/assets/google-play-icon.svg" alt="" aria-hidden="true">
                 <span class="badge-text">
-                    <small data-lang-text-en="Coming soon to" data-lang-text-tr="Yakında">Coming soon to</small>
+                    <small data-lang-text-en="Get it on" data-lang-text-tr="Hemen indir">Get it on</small>
                     <strong>Google Play</strong>
                 </span>
-            </span>
+            </a>
         </div>
     </div>
     <div class="hero-art">
@@ -482,15 +504,20 @@
 <!-- ======================== CLOSING CTA ======================== -->
 <section class="cta-band">
     <h2 data-lang-text-en="Ready to get more done?" data-lang-text-tr="Daha fazlasını başarmaya hazır mısın?">Ready to get more done?</h2>
-    <p data-lang-text-en="DoneBot is launching soon on Android." data-lang-text-tr="DoneBot yakında Android'de.">DoneBot is launching soon on Android.</p>
+    <p data-lang-text-en="DoneBot is on Google Play — free, no ads."
+       data-lang-text-tr="DoneBot Google Play'de — ücretsiz, reklamsız.">DoneBot is on Google Play — free, no ads.</p>
     <div class="badge-wrap">
-        <span class="badge" role="img" aria-label="Coming soon to Google Play">
+        <a class="badge" href="https://play.google.com/store/apps/details?id=com.todoapp.mobile"
+           target="_blank" rel="noopener noreferrer"
+           aria-label="Get DoneBot on Google Play"
+           data-lang-label-en="Get DoneBot on Google Play"
+           data-lang-label-tr="DoneBot'u Google Play'den indir">
             <img class="play" src="/assets/google-play-icon.svg" alt="" aria-hidden="true">
             <span class="badge-text">
-                <small data-lang-text-en="Coming soon to" data-lang-text-tr="Yakında">Coming soon to</small>
+                <small data-lang-text-en="Get it on" data-lang-text-tr="Hemen indir">Get it on</small>
                 <strong>Google Play</strong>
             </span>
-        </span>
+        </a>
     </div>
 </section>
 
@@ -544,6 +571,7 @@
         var STORAGE_KEY = 'donebot_legal_lang';
         var buttons = document.querySelectorAll('.lang-pill button[data-set]');
         var langTextNodes = document.querySelectorAll('[data-lang-text-en]');
+        var langLabelNodes = document.querySelectorAll('[data-lang-label-en]');
 
         function pickInitialLang() {
             var stored = null;
@@ -561,6 +589,12 @@
                 var attr = 'data-lang-text-' + lang;
                 if (node.hasAttribute(attr)) {
                     node.textContent = node.getAttribute(attr);
+                }
+            });
+            langLabelNodes.forEach(function(node) {
+                var attr = 'data-lang-label-' + lang;
+                if (node.hasAttribute(attr)) {
+                    node.setAttribute('aria-label', node.getAttribute(attr));
                 }
             });
             document.documentElement.setAttribute('lang', lang);
