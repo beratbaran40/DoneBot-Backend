@@ -91,9 +91,7 @@ class RecentErrorLogAppender(private val recentErrors: RecentErrors) : AppenderB
                 at = Instant.ofEpochMilli(event.timeStamp).toString(),
                 level = event.level.toString(),
                 logger = event.loggerName.substringAfterLast('.'),
-                // Log messages routinely quote email addresses and task titles. Truncating keeps an
-                // ops panel from turning into an unbounded PII mirror.
-                message = event.formattedMessage.take(MESSAGE_MAX_LENGTH),
+                message = LogRedaction.sanitize(event.formattedMessage),
                 requestId = event.mdcPropertyMap[REQUEST_ID_KEY],
                 exception = event.throwableProxy?.className,
             ),
@@ -102,7 +100,39 @@ class RecentErrorLogAppender(private val recentErrors: RecentErrors) : AppenderB
 
     private companion object {
         const val APPENDER_NAME = "adminRecentErrors"
-        const val MESSAGE_MAX_LENGTH = 500
         const val REQUEST_ID_KEY = "requestId"
+    }
+}
+
+/**
+ * Makes a log line safe to display in the panel.
+ *
+ * Kept as a plain function rather than a method on the appender so it can be tested directly. That is
+ * not only convenience: `AppenderBase.doAppend` swallows exceptions thrown by `append`, so a fault in
+ * this logic would silently produce an empty error list rather than a failing test.
+ *
+ * Redaction is not hypothetical. Spring Boot's own auto-configuration logs "Using generated security
+ * password: <uuid>" at WARN, and it appeared in this table on the first run. Libraries print secrets,
+ * and a screen that mirrors WARN and ERROR verbatim will eventually mirror one onto a browser.
+ *
+ * Emails and task titles are deliberately left alone: this is an operator-only surface where the email
+ * is frequently the point of the message, and the length cap already bounds how much can appear.
+ */
+internal object LogRedaction {
+
+    private const val MESSAGE_MAX_LENGTH = 500
+
+    private val REDACTIONS = listOf(
+        Regex("""Bearer\s+[A-Za-z0-9._\-]+""") to "Bearer [redacted]",
+        // Any JWT-shaped token, wherever it appears — not only behind an Authorization header.
+        Regex("""eyJ[A-Za-z0-9._\-]{10,}""") to "[token]",
+        Regex("""(?i)(password|secret|api[_\-]?key|token)(["']?\s*[:=]\s*"?)[^\s"',}]+""") to "$1$2[redacted]",
+    )
+
+    fun sanitize(message: String?): String {
+        val redacted = REDACTIONS.fold(message.orEmpty()) { acc, (pattern, replacement) ->
+            pattern.replace(acc, replacement)
+        }
+        return redacted.take(MESSAGE_MAX_LENGTH)
     }
 }
