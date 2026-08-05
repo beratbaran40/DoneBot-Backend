@@ -87,6 +87,13 @@ class NotificationService(
         repository.saveAll(rows)
     }
 
+    @Transactional
+    fun delete(userId: Long, id: Long): Boolean {
+        val entity = repository.findByIdAndUserId(id, userId) ?: return false
+        repository.delete(entity)
+        return true
+    }
+
     @Transactional(readOnly = true)
     fun unreadCount(userId: Long): Long = repository.countByUserIdAndIsReadFalse(userId)
 
