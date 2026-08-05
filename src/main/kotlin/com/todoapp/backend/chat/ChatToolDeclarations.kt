@@ -6,13 +6,14 @@ import com.google.cloud.vertexai.api.Tool
 import com.google.cloud.vertexai.api.Type
 
 /**
- * Server-side mirror of the client's `ChatToolDeclarations.kt`. Re-declared here
- * because tools execute on the backend now (Postgres + transactional) instead
- * of in-process on the device.
+ * The tool surface DoneBot is given. Tools execute on the backend (Postgres + transactional),
+ * not on the device — the client has no tool registry of its own; it only short-circuits a
+ * handful of local intents (today/overdue/weekly/hearts/pomodoro) before the request is sent.
  *
- * Keep this file 1:1 in sync with the names / parameter shapes the system
- * instruction promises — DoneBot's tool plan in the prompt only works if the
- * declarations match exactly.
+ * Keep this file 1:1 in sync with the names / parameter shapes the system instruction promises —
+ * DoneBot's tool plan in the prompt only works if the declarations match exactly. A tool named in
+ * the prompt but missing here makes the model hallucinate calls; one declared but unprompted is
+ * dead weight in every request. Change both files in the same commit.
  */
 object ChatToolDeclarations {
     val tool: Tool = Tool.newBuilder()
@@ -23,6 +24,7 @@ object ChatToolDeclarations {
                 getOverdueTasks(),
                 getTasksForDateRange(),
                 getGroups(),
+                getGroupTasks(),
                 getCompletedTasksThisWeek(),
                 getProductivityInsights(),
                 findTaskByTitle(),
@@ -35,7 +37,9 @@ object ChatToolDeclarations {
                 bulkDeleteTasks(),
                 bulkRescheduleTasks(),
                 setTaskLocation(),
-                createStagedTask(),
+                setTaskSchedule(),
+                finishRoutine(),
+                setSteps(),
                 addStep(),
                 renameStep(),
                 setStepCompletion(),
@@ -88,6 +92,38 @@ object ChatToolDeclarations {
             .setDescription("Returns the user's family groups (id, name, member count).")
             .build()
 
+    private fun getGroupTasks(): FunctionDeclaration =
+        FunctionDeclaration.newBuilder()
+            .setName("getGroupTasks")
+            .setDescription(
+                "READ-ONLY. Returns the shared tasks of ONE family group the user belongs to. " +
+                    "Call getGroups first to get the group id. Use for 'what's left in the family " +
+                    "group', 'what's assigned to me at home', 'ailedeki görevler ne durumda'. " +
+                    "Group tasks can NEVER be created, edited, completed, rescheduled or deleted " +
+                    "from chat — if the user asks for any of that, tell them to open that group's " +
+                    "screen in the app.",
+            )
+            .setParameters(
+                Schema.newBuilder()
+                    .setType(Type.OBJECT)
+                    .putProperties("groupId", longSchema("Numeric group id, from getGroups."))
+                    .putProperties(
+                        "onlyAssignedToMe",
+                        Schema.newBuilder().setType(Type.BOOLEAN)
+                            .setDescription("true to return only tasks assigned to the user. Defaults to false.")
+                            .build(),
+                    )
+                    .putProperties(
+                        "includeCompleted",
+                        Schema.newBuilder().setType(Type.BOOLEAN)
+                            .setDescription("true to also return finished tasks. Defaults to false (pending only).")
+                            .build(),
+                    )
+                    .addAllRequired(listOf("groupId"))
+                    .build(),
+            )
+            .build()
+
     private fun getCompletedTasksThisWeek(): FunctionDeclaration =
         FunctionDeclaration.newBuilder()
             .setName("getCompletedTasksThisWeek")
@@ -98,10 +134,11 @@ object ChatToolDeclarations {
         FunctionDeclaration.newBuilder()
             .setName("createTask")
             .setDescription(
-                "Creates a new personal task. " +
-                    "timeStart is required UNLESS isAllDay=true (then omit timeStart/timeEnd). " +
-                    "timeEnd defaults to timeStart+30min when missing. " +
-                    "Category defaults to PERSONAL. Recurrence defaults to NONE.",
+                "Creates a new personal task — this is also how you create a STAGED task (pass " +
+                    "`steps`) and a CUSTOM one (pass `steps` AND `recurrence`). There is no separate " +
+                    "staged-task create tool. Only title and date are required: timeStart defaults to " +
+                    "09:00 (omit it entirely when isAllDay=true), timeEnd to timeStart+30min, " +
+                    "category to PERSONAL, recurrence to NONE.",
             )
             .setParameters(
                 Schema.newBuilder()
@@ -111,7 +148,8 @@ object ChatToolDeclarations {
                     .putProperties(
                         "timeStart",
                         timeSchema(
-                            "Start time HH:mm in 24h. Omit when isAllDay=true.",
+                            "Start time HH:mm in 24h. Optional — defaults to 09:00. " +
+                                "Omit when isAllDay=true.",
                         ),
                     )
                     .putProperties("timeEnd", timeSchema("End time HH:mm in 24h. Optional."))
@@ -409,7 +447,13 @@ object ChatToolDeclarations {
     private fun deleteTask(): FunctionDeclaration =
         FunctionDeclaration.newBuilder()
             .setName("deleteTask")
-            .setDescription("Deletes a personal task by id. Group tasks cannot be deleted from chat.")
+            .setDescription(
+                "Deletes a personal task by id, permanently. " +
+                    "REQUIRES_CONFIRMATION: ALWAYS state the task (title + date) and ask the user to " +
+                    "confirm BEFORE calling this tool — never on the same turn they ask for it. " +
+                    "Cannot be undone. To stop a routine without losing its history use finishRoutine " +
+                    "instead. Group tasks cannot be deleted from chat.",
+            )
             .setParameters(
                 Schema.newBuilder()
                     .setType(Type.OBJECT)
@@ -458,10 +502,11 @@ object ChatToolDeclarations {
             .setName("getProductivityInsights")
             .setDescription(
                 "Returns productivity stats for a date range: completedCount, totalCount, " +
-                    "completionPercent (0-100), currentStreakDays (consecutive days ending " +
-                    "today with at least one completed task), and busiestDayName " +
-                    "(day-of-week with most completions). Use for questions like " +
-                    "'how productive was I', 'streak', 'best day', 'completed this month'.",
+                    "completionPercent (0-100), activeDays (days in the range with at least one " +
+                    "completion), rangeDays, and busiestDayName (day-of-week with most completions). " +
+                    "Use for questions like 'how productive was I', 'best day', 'completed this " +
+                    "month'. Do NOT call this for health points / hearts — the [Context] block " +
+                    "already has them.",
             )
             .setParameters(
                 Schema.newBuilder()
@@ -574,58 +619,158 @@ object ChatToolDeclarations {
             )
             .build()
 
-    private fun createStagedTask(): FunctionDeclaration =
+    private fun setTaskSchedule(): FunctionDeclaration =
         FunctionDeclaration.newBuilder()
-            .setName("createStagedTask")
+            .setName("setTaskSchedule")
             .setDescription(
-                "Creates a STAGED personal task: a goal broken into an ordered list of steps " +
-                    "(e.g. 'Plan the trip' → book flight, pack, check passport). Use this when the " +
-                    "user describes a task with sub-steps / a checklist / phases. Always personal, " +
-                    "category PERSONAL, recurrence NONE. Requires at least one step. " +
-                    "timeStart defaults to 09:00 unless isAllDay=true.",
+                "Updates ONLY how often a task repeats and when it reminds. Use this whenever the " +
+                    "user changes the repeat frequency, the interval, the weekdays, the end date, or " +
+                    "the reminder times of an existing task — updateTask CANNOT change any of those. " +
+                    "Set recurrence=NONE to turn a routine back into a one-off; that also clears the " +
+                    "interval, weekdays, end date and reminder times. Omitted fields keep their " +
+                    "current value; pass an empty string (or an empty array for reminderTimes) to " +
+                    "clear one. Group tasks return an error.",
             )
             .setParameters(
                 Schema.newBuilder()
                     .setType(Type.OBJECT)
-                    .putProperties("title", stringSchema("Title of the overall staged task."))
-                    .putProperties("date", isoDateSchema("Task date, ISO YYYY-MM-DD."))
+                    .putProperties("taskId", longSchema("Numeric task id."))
+                    .putProperties(
+                        "recurrence",
+                        Schema.newBuilder().setType(Type.STRING)
+                            .setDescription(
+                                "New recurrence. One of: NONE, DAILY, WEEKLY, MONTHLY, YEARLY. Omit to " +
+                                    "keep the current frequency and only change the rule below.",
+                            )
+                            .build(),
+                    )
+                    .putProperties(
+                        "recurrenceInterval",
+                        Schema.newBuilder().setType(Type.INTEGER)
+                            .setDescription(
+                                "Repeat every N periods of the recurrence. 1 = every period. Range 1-30. " +
+                                    "Use 2 for 'every other day', 'gün aşırı', 'every 2 weeks'. Ignored " +
+                                    "when the task ends up non-recurring.",
+                            )
+                            .build(),
+                    )
+                    .putProperties(
+                        "recurrenceByDay",
+                        Schema.newBuilder().setType(Type.STRING)
+                            .setDescription(
+                                "WEEKLY only: comma-separated weekday names to fire on, e.g. " +
+                                    "'MONDAY,WEDNESDAY,FRIDAY'. Weekdays = MONDAY..FRIDAY. Pass an empty " +
+                                    "string to clear it and fall back to the start date's own weekday.",
+                            )
+                            .build(),
+                    )
+                    .putProperties(
+                        "recurrenceUntil",
+                        isoDateSchema(
+                            "Last day the routine repeats, inclusive, ISO YYYY-MM-DD. Compute it from " +
+                                "the task's start date for 'for one more month', '2 hafta daha'. Pass an " +
+                                "empty string to make it open-ended again.",
+                        ),
+                    )
+                    .putProperties(
+                        "reminderTimes",
+                        Schema.newBuilder()
+                            .setType(Type.ARRAY)
+                            .setItems(timeSchema("A time of day, HH:mm."))
+                            .setDescription(
+                                "Absolute times of day to remind at on every occurrence, e.g. " +
+                                    "['08:00','14:00','20:00'] for 'three times a day', 'günde 3 kez'. " +
+                                    "Max 8. Needs a recurrence and replaces reminderOffsetMinutes. Pass " +
+                                    "an empty array to clear all of them.",
+                            )
+                            .build(),
+                    )
+                    .addAllRequired(listOf("taskId"))
+                    .build(),
+            )
+            .build()
+
+    private fun finishRoutine(): FunctionDeclaration =
+        FunctionDeclaration.newBuilder()
+            .setName("finishRoutine")
+            .setDescription(
+                "Retires or resumes a REPEATING task (a routine). finished=true stops it from " +
+                    "appearing on days after `on` and keeps everything already done; finished=false " +
+                    "brings it back. Use for 'I finished my medication course', 'stop the morning run " +
+                    "for good', 'ilaç kürünü bitirdim', 'rutini geri getir'. This is NOT the same as " +
+                    "ticking today's occurrence — use setTaskCompletion for that — and it is NOT " +
+                    "deleting the task; the user keeps the history. A one-off (non-repeating) task " +
+                    "returns an error. Group tasks return an error.",
+            )
+            .setParameters(
+                Schema.newBuilder()
+                    .setType(Type.OBJECT)
+                    .putProperties("taskId", longSchema("Numeric id of the routine."))
+                    .putProperties(
+                        "finished",
+                        Schema.newBuilder().setType(Type.BOOLEAN)
+                            .setDescription("true to retire the routine, false to resume it.")
+                            .build(),
+                    )
+                    .putProperties(
+                        "on",
+                        isoDateSchema(
+                            "Day the routine is considered finished, ISO YYYY-MM-DD. Defaults to today. " +
+                                "Ignored when finished=false.",
+                        ),
+                    )
+                    .addAllRequired(listOf("taskId", "finished"))
+                    .build(),
+            )
+            .build()
+
+    private fun setSteps(): FunctionDeclaration =
+        FunctionDeclaration.newBuilder()
+            .setName("setSteps")
+            .setDescription(
+                "Replaces a task's WHOLE ordered step list in one call. Use this when the user " +
+                    "restates the list ('make the steps: a, b, c'), reorders it, or changes several " +
+                    "steps at once — one call instead of a chain of addStep/renameStep/deleteStep. " +
+                    "Steps you pass with their existing stepId keep their completion state and are " +
+                    "reordered; steps you leave OUT are DELETED. For a single change still prefer " +
+                    "addStep / renameStep / setStepCompletion / deleteStep. Pass an empty array to " +
+                    "strip every step and turn it back into a plain task. Get the stepIds from " +
+                    "findTaskByTitle. Group tasks return an error.",
+            )
+            .setParameters(
+                Schema.newBuilder()
+                    .setType(Type.OBJECT)
+                    .putProperties("taskId", longSchema("Numeric id of the parent task."))
                     .putProperties(
                         "steps",
                         Schema.newBuilder()
                             .setType(Type.ARRAY)
-                            .setItems(stringSchema("A single step title."))
-                            .setDescription(
-                                "Ordered list of step titles (at least one). Keep each step short.",
+                            .setItems(
+                                Schema.newBuilder()
+                                    .setType(Type.OBJECT)
+                                    .putProperties(
+                                        "stepId",
+                                        longSchema(
+                                            "Existing step id from findTaskByTitle. OMIT for a brand-new step.",
+                                        ),
+                                    )
+                                    .putProperties("title", stringSchema("Step title."))
+                                    .putProperties(
+                                        "isCompleted",
+                                        Schema.newBuilder().setType(Type.BOOLEAN)
+                                            .setDescription(
+                                                "Optional. Defaults to the step's current state " +
+                                                    "(or false for a new step).",
+                                            )
+                                            .build(),
+                                    )
+                                    .addAllRequired(listOf("title"))
+                                    .build(),
                             )
+                            .setDescription("The complete new step list, in the order it should appear.")
                             .build(),
                     )
-                    .putProperties("description", stringSchema("Optional description for the overall task."))
-                    .putProperties(
-                        "isAllDay",
-                        Schema.newBuilder()
-                            .setType(Type.BOOLEAN)
-                            .setDescription(
-                                "True for an all-day staged task (omit timeStart/timeEnd). Defaults false.",
-                            )
-                            .build(),
-                    )
-                    .putProperties("timeStart", timeSchema("Start time HH:mm in 24h. Optional; defaults 09:00."))
-                    .putProperties("timeEnd", timeSchema("End time HH:mm in 24h. Optional."))
-                    .putProperties(
-                        "reminderOffsetMinutes",
-                        Schema.newBuilder()
-                            .setType(Type.INTEGER)
-                            .setDescription("Reminder offset in minutes before the task. 0 = none (default).")
-                            .build(),
-                    )
-                    .putProperties(
-                        "isSecret",
-                        Schema.newBuilder()
-                            .setType(Type.BOOLEAN)
-                            .setDescription("Mark task as secret (biometric-protected). Defaults to false.")
-                            .build(),
-                    )
-                    .addAllRequired(listOf("title", "date", "steps"))
+                    .addAllRequired(listOf("taskId", "steps"))
                     .build(),
             )
             .build()
