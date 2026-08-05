@@ -35,6 +35,11 @@
             --badge-bg-hover: #1C212B;
             --badge-border: rgba(255, 255, 255, 0.14);
             --badge-border-hover: rgba(255, 255, 255, 0.28);
+            /* Ghost "coming soon" pill. --muted misses 4.5:1 on --card (4.41:1) and
+               --card-border only reaches 1.7:1 as a stroke, so the subordinate badge
+               gets its own pair: 5.26:1 / 5.01:1 text, 3.37:1 / 3.20:1 border. */
+            --badge-soon-fg: #63687A;
+            --badge-soon-border: #828898;
             --shadow: 0 4px 14px rgba(69, 102, 236, 0.10);
             --shadow-soft: 0 2px 8px rgba(69, 102, 236, 0.06);
             --radius-card: 16px;
@@ -55,6 +60,8 @@
                    separate it — 0.14 alpha lands at 1.8:1, 0.42 clears the 3:1 bar. */
                 --badge-border: rgba(255, 255, 255, 0.42);
                 --badge-border-hover: rgba(255, 255, 255, 0.60);
+                --badge-soon-fg: #9CA3AF;
+                --badge-soon-border: #71767F;
                 --shadow: 0 4px 14px rgba(0, 0, 0, 0.45);
                 --shadow-soft: 0 2px 8px rgba(0, 0, 0, 0.30);
             }
@@ -196,6 +203,32 @@
         .badge-text small { font-size: 10px; letter-spacing: 0.6px; text-transform: uppercase; opacity: 0.85; }
         .badge-text strong { font-size: 16px; font-weight: 600; color: #fff; }
 
+        /* "Coming soon — App Store" badge — a ghost pill, and deliberately a <span>:
+           there is no listing to link to yet. Fading the solid pill instead (opacity: .55)
+           composites #fff down to 4.24:1 on --bg, and in dark mode fades the stroke — the
+           only edge a black pill has on a black page — to 2.07:1. Dropping the fill keeps
+           every ratio above AA while reading far quieter than the live Play pill (18.88:1).
+           Sits after `.badge:hover`, which it ties on specificity, so the resets out-order it. */
+        .badge--soon,
+        .badge--soon:hover,
+        .badge--soon:focus-visible {
+            background: transparent;
+            color: var(--badge-soon-fg);
+            border-color: var(--badge-soon-border);
+            /* Nothing to click, so nothing should lift, glow, or animate under the pointer */
+            cursor: default;
+            transform: none;
+            box-shadow: none;
+            transition: none;
+        }
+        /* `.badge-text strong` hard-codes #fff for the black pill — on a transparent pill that
+           is invisible in light mode. And `small`'s 0.85 fade costs the 10px line 1.4:1
+           (5.26 -> 3.84), dropping it under AA. Both have to come back. */
+        .badge--soon .badge-text strong { color: inherit; }
+        .badge--soon .badge-text small { opacity: 1; }
+        /* Monochrome mark, so it inherits the pill colour the way the footer icons do */
+        .badge--soon .apple { width: 20px; height: 20px; flex-shrink: 0; display: block; fill: currentColor; }
+
         /* Sections */
         .section { margin: 52px 0; }
         .section-title { color: var(--accent); font-weight: 600; font-size: 26px; text-align: center; margin: 0 0 8px; }
@@ -256,7 +289,7 @@
         }
         .cta-band h2 { color: var(--accent); font-weight: 600; font-size: 24px; margin: 0 0 8px; }
         .cta-band p { color: var(--muted); margin: 0 0 22px; }
-        .cta-band .badge-wrap { display: flex; justify-content: center; }
+        .cta-band .badge-wrap { display: flex; justify-content: center; align-items: center; flex-wrap: wrap; gap: 16px; }
 
         /* Footer — creator card */
         .footer { margin-top: 56px; padding-top: 24px; border-top: 1px solid var(--card-border); }
@@ -386,6 +419,18 @@
                     <strong>Google Play</strong>
                 </span>
             </a>
+            <span class="badge badge--soon" role="img"
+                  aria-label="DoneBot is coming soon to the App Store"
+                  data-lang-label-en="DoneBot is coming soon to the App Store"
+                  data-lang-label-tr="DoneBot yakında App Store'da">
+                <svg class="apple" viewBox="0 0 24 24" role="img" aria-hidden="true">
+                    <path d="M12.152 6.896c-.948 0-2.415-1.078-3.96-1.04-2.04.027-3.91 1.183-4.961 3.014-2.117 3.675-.546 9.103 1.519 12.09 1.013 1.454 2.208 3.09 3.792 3.039 1.52-.065 2.09-.987 3.935-.987 1.831 0 2.35.987 3.96.948 1.637-.026 2.676-1.48 3.676-2.948 1.156-1.688 1.636-3.325 1.662-3.415-.039-.013-3.182-1.221-3.22-4.857-.026-3.04 2.48-4.494 2.597-4.559-1.429-2.09-3.623-2.324-4.39-2.376-2-.156-3.675 1.088-4.61 1.088zM15.53 3.83c.843-1.012 1.4-2.427 1.248-3.83-1.208.052-2.662.805-3.532 1.818-.78.896-1.454 2.338-1.273 3.714 1.338.104 2.715-.688 3.559-1.701"/>
+                </svg>
+                <span class="badge-text">
+                    <small data-lang-text-en="Coming soon" data-lang-text-tr="Yakında">Coming soon</small>
+                    <strong>App Store</strong>
+                </span>
+            </span>
         </div>
     </div>
     <div class="hero-art">
@@ -504,8 +549,8 @@
 <!-- ======================== CLOSING CTA ======================== -->
 <section class="cta-band">
     <h2 data-lang-text-en="Ready to get more done?" data-lang-text-tr="Daha fazlasını başarmaya hazır mısın?">Ready to get more done?</h2>
-    <p data-lang-text-en="DoneBot is on Google Play — free, no ads."
-       data-lang-text-tr="DoneBot Google Play'de — ücretsiz, reklamsız.">DoneBot is on Google Play — free, no ads.</p>
+    <p data-lang-text-en="DoneBot is on Google Play — free, no ads. Coming soon to the App Store."
+       data-lang-text-tr="DoneBot Google Play'de — ücretsiz, reklamsız. Yakında App Store'da.">DoneBot is on Google Play — free, no ads. Coming soon to the App Store.</p>
     <div class="badge-wrap">
         <a class="badge" href="https://play.google.com/store/apps/details?id=com.todoapp.mobile"
            target="_blank" rel="noopener noreferrer"
@@ -518,6 +563,18 @@
                 <strong>Google Play</strong>
             </span>
         </a>
+        <span class="badge badge--soon" role="img"
+              aria-label="DoneBot is coming soon to the App Store"
+              data-lang-label-en="DoneBot is coming soon to the App Store"
+              data-lang-label-tr="DoneBot yakında App Store'da">
+            <svg class="apple" viewBox="0 0 24 24" role="img" aria-hidden="true">
+                <path d="M12.152 6.896c-.948 0-2.415-1.078-3.96-1.04-2.04.027-3.91 1.183-4.961 3.014-2.117 3.675-.546 9.103 1.519 12.09 1.013 1.454 2.208 3.09 3.792 3.039 1.52-.065 2.09-.987 3.935-.987 1.831 0 2.35.987 3.96.948 1.637-.026 2.676-1.48 3.676-2.948 1.156-1.688 1.636-3.325 1.662-3.415-.039-.013-3.182-1.221-3.22-4.857-.026-3.04 2.48-4.494 2.597-4.559-1.429-2.09-3.623-2.324-4.39-2.376-2-.156-3.675 1.088-4.61 1.088zM15.53 3.83c.843-1.012 1.4-2.427 1.248-3.83-1.208.052-2.662.805-3.532 1.818-.78.896-1.454 2.338-1.273 3.714 1.338.104 2.715-.688 3.559-1.701"/>
+            </svg>
+            <span class="badge-text">
+                <small data-lang-text-en="Coming soon" data-lang-text-tr="Yakında">Coming soon</small>
+                <strong>App Store</strong>
+            </span>
+        </span>
     </div>
 </section>
 
