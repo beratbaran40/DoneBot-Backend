@@ -42,4 +42,28 @@ class ChatReportEntity(
 
     @Column(nullable = false, updatable = false)
     var createdAt: Instant = Instant.now(),
+
+    // Resolution state (V26). Until now this table was write-only — reports went in and no code path
+    // ever read them back, so the whole moderation workflow was a best-effort email to the admin inbox.
+    // Existing rows default to OPEN because nothing has in fact been reviewed.
+    @Column(nullable = false, length = 16)
+    var status: String = ReportStatus.OPEN.name,
+
+    @Column(length = 24)
+    var resolution: String? = null,
+
+    @Column(name = "resolution_note", length = 500)
+    var resolutionNote: String? = null,
+
+    @Column(name = "resolved_at")
+    var resolvedAt: Instant? = null,
+
+    /** No FK: the decision must stay attributable after the deciding admin account is gone. */
+    @Column(name = "resolved_by")
+    var resolvedBy: Long? = null,
 )
+
+enum class ReportStatus { OPEN, RESOLVED, DISMISSED }
+
+/** What the admin actually did. Kept coarse on purpose — a long taxonomy nobody applies consistently. */
+enum class ReportResolution { NO_ACTION, CONTENT_REMOVED, USER_SUSPENDED }

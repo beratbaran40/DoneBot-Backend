@@ -55,4 +55,20 @@ class ContentReportEntity(
 
     @Column(nullable = false, updatable = false)
     var createdAt: Instant = Instant.now(),
+
+    // Resolution state (V26) — see ChatReportEntity for why this table needed one.
+    @Column(nullable = false, length = 16)
+    var status: String = com.todoapp.backend.chat.ReportStatus.OPEN.name,
+
+    @Column(length = 24)
+    var resolution: String? = null,
+
+    @Column(name = "resolution_note", length = 500)
+    var resolutionNote: String? = null,
+
+    @Column(name = "resolved_at")
+    var resolvedAt: Instant? = null,
+
+    @Column(name = "resolved_by")
+    var resolvedBy: Long? = null,
 )
