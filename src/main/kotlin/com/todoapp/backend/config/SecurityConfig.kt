@@ -1,10 +1,13 @@
 package com.todoapp.backend.config
 
+import com.todoapp.backend.admin.AdminSecurityConfig
 import com.todoapp.backend.auth.JwtAuthFilter
+import org.springframework.beans.factory.annotation.Qualifier
 import org.springframework.beans.factory.annotation.Value
 import org.springframework.boot.context.properties.EnableConfigurationProperties
 import org.springframework.context.annotation.Bean
 import org.springframework.context.annotation.Configuration
+import org.springframework.core.annotation.Order
 import org.springframework.http.HttpStatus
 import org.springframework.security.config.annotation.web.builders.HttpSecurity
 import org.springframework.security.config.http.SessionCreationPolicy
@@ -13,6 +16,7 @@ import org.springframework.security.crypto.password.PasswordEncoder
 import org.springframework.security.web.SecurityFilterChain
 import org.springframework.security.web.authentication.HttpStatusEntryPoint
 import org.springframework.security.web.authentication.UsernamePasswordAuthenticationFilter
+import org.springframework.web.cors.CorsConfigurationSource
 
 @Configuration
 @EnableConfigurationProperties(
@@ -25,21 +29,36 @@ class SecurityConfig {
     @Bean
     fun passwordEncoder(): PasswordEncoder = BCryptPasswordEncoder()
 
+    /**
+     * The application chain, covering everything the Android client talks to.
+     *
+     * @Order(2) puts it behind [com.todoapp.backend.admin.AdminSecurityConfig], which claims the
+     * /admin tree via its own securityMatcher. Ordering is the only change this file needed for the
+     * admin panel: requests without an /admin prefix reach this chain exactly as before.
+     */
     @Bean
+    @Order(2)
     fun securityFilterChain(
         http: HttpSecurity,
         jwtAuthFilter: JwtAuthFilter,
         @Value("\${springdoc.api-docs.enabled:true}") swaggerEnabled: Boolean,
+        // Qualified by name: Spring MVC's mvcHandlerMappingIntrospector also implements
+        // CorsConfigurationSource, so by-type injection finds two candidates and startup fails.
+        @Qualifier(AdminSecurityConfig.ADMIN_CORS_BEAN) corsConfigurationSource: CorsConfigurationSource,
     ): SecurityFilterChain {
         http
             .csrf { it.disable() }
             .sessionManagement { it.sessionCreationPolicy(SessionCreationPolicy.STATELESS) }
-            // CORS is intentionally NOT configured (§4.22). The only client is the native Android app,
-            // which sends no browser Origin — with no CorsConfigurationSource, Spring emits no
-            // Access-Control-Allow-Origin and browsers block any cross-origin read: secure-by-default.
-            // If a web panel is ever added, register an explicit CorsConfigurationSource with a fixed
-            // origin allowlist. NEVER combine allowedOrigins("*") with allowCredentials(true) — that lets
-            // ANY origin make credentialed requests (a critical account-takeover vector).
+            // CORS was intentionally absent while the Android app was the only client (§4.22). The admin
+            // panel added a browser client, so an explicit fixed-origin allowlist now exists in
+            // [com.todoapp.backend.admin.AdminCorsConfig] — it registers configuration ONLY for the
+            // /admin tree and the three auth endpoints the panel calls. Every other path still gets no
+            // Access-Control-Allow-Origin, so cross-origin reads stay blocked by default.
+            // The source is applied here too because /auth/login lives on this chain: a JSON body makes
+            // that request non-simple, so the browser preflights it.
+            // NEVER combine allowedOrigins("*") with allowCredentials(true) — that lets ANY origin make
+            // credentialed requests (a critical account-takeover vector). We keep credentials off.
+            .cors { it.configurationSource(corsConfigurationSource) }
             .authorizeHttpRequests { auth ->
                 auth
                     .requestMatchers(
