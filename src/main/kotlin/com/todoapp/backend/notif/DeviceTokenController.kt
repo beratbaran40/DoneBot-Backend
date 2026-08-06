@@ -19,6 +19,8 @@ data class FcmTokenRequest(
     @field:NotBlank val token: String,
     val deviceId: String? = null,
     val deviceName: String? = null,
+    /** IANA zone id of the device, so due-soon reminders land at the assignee's local time. */
+    val timeZone: String? = null,
 )
 
 data class FcmTokenResponseData(
@@ -36,6 +38,7 @@ class DeviceTokenService(private val tokens: DeviceTokenRepository) {
             existing.userId = userId
             existing.deviceId = req.deviceId ?: existing.deviceId
             existing.deviceName = req.deviceName ?: existing.deviceName
+            existing.timeZone = req.timeZone ?: existing.timeZone
             existing.updatedAt = Instant.now()
             tokens.save(existing)
         } else {
@@ -45,6 +48,7 @@ class DeviceTokenService(private val tokens: DeviceTokenRepository) {
                     token = req.token,
                     deviceId = req.deviceId,
                     deviceName = req.deviceName,
+                    timeZone = req.timeZone,
                 )
             )
         }

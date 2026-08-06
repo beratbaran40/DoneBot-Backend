@@ -34,6 +34,13 @@ class DeviceTokenEntity(
     @Column
     var deviceName: String? = null,
 
+    /**
+     * The device's IANA zone (e.g. "Europe/Istanbul"), sent with the token. Null for a token
+     * registered before V29; TaskDueSoonJob falls back to the configured default for those.
+     */
+    @Column(name = "time_zone")
+    var timeZone: String? = null,
+
     @Column(nullable = false, updatable = false)
     var createdAt: Instant = Instant.now(),
 

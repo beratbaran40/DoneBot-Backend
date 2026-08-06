@@ -1,6 +1,7 @@
 package com.todoapp.backend.notif.schedule
 
 import com.todoapp.backend.group.GroupRepository
+import com.todoapp.backend.notif.DeviceTokenRepository
 import com.todoapp.backend.notif.NotificationPublisher
 import com.todoapp.backend.notif.inbox.NotificationType
 import com.todoapp.backend.task.TaskEntity
@@ -24,29 +25,33 @@ class TaskDueSoonJob(
     private val tasks: TaskRepository,
     private val groups: GroupRepository,
     private val publisher: NotificationPublisher,
-    // No per-user timezone exists yet, so due-soon comparisons use a single configurable zone.
-    // Defaults to the primary market (Türkiye, fixed UTC+3, no DST). A naive UTC comparison would
-    // fire group-task reminders offset by the assignee's UTC offset. Per-assignee zones are a
-    // follow-up (store the assignee's IANA zone → use it here). Personal-task reminders are
-    // unaffected — those are client-local exact alarms scheduled in the device's own zone.
+    private val deviceTokens: DeviceTokenRepository,
+    // Fallback only, for an assignee whose devices predate the time-zone column. Defaults to the
+    // primary market (Türkiye, fixed UTC+3, no DST). Personal-task reminders never come through here
+    // — those are client-local exact alarms scheduled in the device's own zone.
     @Value("\${app.default-timezone:Europe/Istanbul}") defaultZone: String,
 ) {
     private val log = LoggerFactory.getLogger(TaskDueSoonJob::class.java)
-    private val zone: ZoneId = ZoneId.of(defaultZone)
+    private val fallbackZone: ZoneId = ZoneId.of(defaultZone)
 
     @Scheduled(fixedDelayString = "\${app.scheduling.due-soon-interval-ms:300000}", initialDelay = 60000)
     @Transactional
     fun run() {
         val now = Instant.now()
         val horizon = now.plusSeconds(LOOKAHEAD_SECONDS)
-        val today = LocalDate.now(zone).toEpochDay()
+        // The candidate window is deliberately ±1 day around the widest zone the fallback could
+        // mean; the exact due instant is then computed per assignee below.
+        val today = LocalDate.now(fallbackZone).toEpochDay()
         val candidates = tasks.findDueSoonCandidates(fromDay = today - 1, toDay = today + 1)
         if (candidates.isEmpty()) return
         var notified = 0
+        // One lookup per assignee, not per task: a group's whole backlog usually shares assignees.
+        val zoneCache = mutableMapOf<Long, ZoneId>()
         candidates.forEach { task ->
-            val due = task.dueInstant() ?: return@forEach
-            if (due.isBefore(now) || due.isAfter(horizon)) return@forEach
             val assignee = task.assignedToUserId ?: return@forEach
+            val zone = zoneCache.getOrPut(assignee) { zoneFor(assignee) }
+            val due = task.dueInstant(zone) ?: return@forEach
+            if (due.isBefore(now) || due.isAfter(horizon)) return@forEach
             val group = groups.findSummaryById(task.familyGroupId ?: return@forEach) ?: return@forEach
             publisher.publish(
                 userIds = listOf(assignee),
@@ -67,7 +72,17 @@ class TaskDueSoonJob(
         if (notified > 0) log.info("TaskDueSoonJob: notified={} candidates={}", notified, candidates.size)
     }
 
-    private fun TaskEntity.dueInstant(): Instant? = runCatching {
+    /** An unparseable stored zone (renamed IANA id, corrupt row) must not kill the whole sweep. */
+    private fun zoneFor(userId: Long): ZoneId {
+        val stored = deviceTokens.findFirstByUserIdAndTimeZoneIsNotNullOrderByUpdatedAtDesc(userId)?.timeZone
+            ?: return fallbackZone
+        return runCatching { ZoneId.of(stored) }.getOrElse {
+            log.warn("Unparseable device time zone '{}' for user={}; using {}", stored, userId, fallbackZone)
+            fallbackZone
+        }
+    }
+
+    private fun TaskEntity.dueInstant(zone: ZoneId): Instant? = runCatching {
         LocalDate.ofEpochDay(date)
             .atStartOfDay(zone)
             .plusSeconds(timeEnd)
