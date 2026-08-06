@@ -1,5 +1,7 @@
 package com.todoapp.backend.group
 
+import com.todoapp.backend.notif.NotificationPublisher
+import com.todoapp.backend.notif.inbox.NotificationType
 import com.todoapp.backend.task.TaskRepository
 import com.todoapp.backend.user.UserEntity
 import com.todoapp.backend.user.UserRepository
@@ -18,6 +20,7 @@ class GroupService(
     private val activities: GroupActivityRepository,
     private val invitations: InvitationService,
     private val invitationRepository: InvitationRepository,
+    private val publisher: NotificationPublisher,
 ) {
     private fun logActivity(
         groupId: Long,
@@ -143,8 +146,13 @@ class GroupService(
         logActivity(groupId, userId, GroupActivityType.MEMBER_LEFT, "$name left the group")
     }
 
+    /**
+     * [notify] exists for exactly one caller: account deletion transfers ownership from inside the
+     * deletion transaction and fans the notification out **after** it commits (UserController.deleteMe,
+     * AdminUserService), so notifying here too would send the new admin the same message twice.
+     */
     @Transactional
-    fun transferOwnership(userId: Long, groupId: Long, req: TransferOwnershipRequest) {
+    fun transferOwnership(userId: Long, groupId: Long, req: TransferOwnershipRequest, notify: Boolean = true) {
         requireAdmin(groupId, userId)
         val target = members.findByGroupIdAndUserId(groupId, req.userId)
             ?: throw ResponseStatusException(HttpStatus.NOT_FOUND, "Target user not in group")
@@ -160,6 +168,21 @@ class GroupService(
         groups.save(group)
         val newOwnerName = users.findSummaryById(req.userId)?.displayName ?: "user"
         logActivity(groupId, userId, GroupActivityType.OWNERSHIP_TRANSFERRED, "Transferred ownership to $newOwnerName", targetName = newOwnerName)
+        // Being handed a group is not something the new admin can discover on their own — the
+        // activity feed only says it happened to whoever opens the group. The same event already
+        // notifies when it comes from an account deletion (UserController.deleteMe); a manual
+        // transfer silently did not, which is the more common case of the two.
+        if (!notify) return
+        publisher.publish(
+            userIds = listOf(req.userId),
+            type = NotificationType.GROUP_OWNERSHIP_TRANSFERRED,
+            title = "You're now the admin of ${group.name}",
+            body = "Tap to open the group",
+            payload = mapOf(
+                "groupId" to group.id.toString(),
+                "groupName" to group.name,
+            ),
+        )
     }
 
     @Transactional

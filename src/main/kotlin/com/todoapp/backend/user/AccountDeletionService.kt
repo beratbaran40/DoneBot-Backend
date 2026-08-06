@@ -70,6 +70,8 @@ class AccountDeletionService(
                     userId = userId,
                     groupId = group.id,
                     req = TransferOwnershipRequest(userId = newOwner.userId),
+                    // The caller notifies after this transaction commits; see the flag's docstring.
+                    notify = false,
                 )
                 transferredGroups += TransferredGroup(
                     groupId = group.id,
