@@ -14,6 +14,7 @@ import com.todoapp.backend.task.Recurrence
 import com.todoapp.backend.task.TaskEntity
 import com.todoapp.backend.task.TaskRepository
 import com.todoapp.backend.user.UserRepository
+import io.micrometer.core.instrument.simple.SimpleMeterRegistry
 import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
@@ -42,7 +43,7 @@ class ChatContextPreambleTest {
     private val chatUsage = ChatUsageRecorder({ _, _, _ -> }, Executor { it.run() })
 
     private val service = ChatService(
-        vertex, tools, taskRepo, members, users, ChatProperties(), tracker, chatUsage, settings,
+        vertex, tools, taskRepo, members, users, ChatProperties(), tracker, chatUsage, settings, SimpleMeterRegistry(),
     )
 
     /** Every conversation handed to Vertex this test, in call order. */

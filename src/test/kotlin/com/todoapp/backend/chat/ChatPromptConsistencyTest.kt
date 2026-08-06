@@ -54,6 +54,52 @@ class ChatPromptConsistencyTest {
     }
 
     @Test
+    fun `the task-type block speaks the app's vocabulary, not the tool surface`() {
+        // The regression this exists for: a tool name sitting inside a user-facing type definition gets
+        // restated to the user in the second person. "Create it with createTask passing both `steps` and
+        // `recurrence`" came back as "I recommend you use the `createTask` tool" — a leak AND an
+        // instruction only this service can carry out.
+        //
+        // Sliced by heading rather than line number so the test survives edits above it.
+        val declared = ChatToolDeclarations.tool.functionDeclarationsList.map { it.name }
+
+        listOf(
+            Triple(english, "Task types", "Rules:"),
+            Triple(turkish, "Görev tipleri", "Kurallar:"),
+        ).forEach { (prompt, start, end) ->
+            val block = prompt.lines()
+                .dropWhile { !it.startsWith(start) }
+                .takeWhile { !it.startsWith(end) }
+                .joinToString("\n")
+
+            assertThat(block).describedAs("the %s block was not found", start).isNotBlank()
+            assertThat(declared.filter { block.contains(it) })
+                .describedAs("the task-type block must name no tools")
+                .isEmpty()
+        }
+    }
+
+    @Test
+    fun `both prompts forbid naming a tool to the user, with a good and a bad example`() {
+        // Same shape as the numeric-id rule directly above it in the prompt: a negative rule is a
+        // suggestion, a negative rule with both examples is a pattern to copy.
+        assertThat(english).contains("NEVER name an internal tool in your reply")
+        assertThat(english).contains("That's a CUSTOM task")
+        assertThat(english).contains("I recommend using the createTask tool")
+        assertThat(turkish).contains("ASLA dahili bir araç adı geçirme")
+        assertThat(turkish).contains("Bu ÖZEL bir görev")
+        assertThat(turkish).contains("createTask aracını kullanmanı öneririm")
+    }
+
+    @Test
+    fun `both prompts ban markdown because the client renders replies as plain text`() {
+        // ui/chat/ChatMessageList -> TDChatBubble -> TDText: no markdown handling anywhere in the
+        // client, so a backtick the model emits is a backtick the user reads.
+        assertThat(english).contains("Plain text only")
+        assertThat(turkish).contains("Yalnızca düz metin")
+    }
+
+    @Test
     fun `both prompts stay the same length so an edit to one is an edit to the other`() {
         // They are line-for-line translations. A drift in line count is the cheapest possible signal
         // that a rule was added to one prompt and forgotten in the other.

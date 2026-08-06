@@ -8,6 +8,7 @@ import com.google.cloud.vertexai.generativeai.GenerativeModel
 import com.todoapp.backend.group.GroupMemberRepository
 import com.todoapp.backend.task.TaskRepository
 import com.todoapp.backend.user.UserRepository
+import io.micrometer.core.instrument.simple.SimpleMeterRegistry
 import io.grpc.Status
 import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.BeforeEach
@@ -52,7 +53,7 @@ class ChatServiceVertexFallbackTest {
 
     private val props = ChatProperties()
 
-    private val service = ChatService(vertex, tools, taskRepo, members, users, props, tracker, chatUsage, settings)
+    private val service = ChatService(vertex, tools, taskRepo, members, users, props, tracker, chatUsage, settings, SimpleMeterRegistry())
 
     @BeforeEach
     fun setUp() {
@@ -177,6 +178,7 @@ class ChatServiceVertexFallbackTest {
     fun `an exhausted deadline short-circuits to 503 without spending a Vertex call`() {
         val service = ChatService(
             vertex, tools, taskRepo, members, users, ChatProperties(turnDeadlineMs = 1), tracker, chatUsage, settings,
+            SimpleMeterRegistry(),
         )
 
         val ex = assertThrows<ResponseStatusException> { service.reply(USER_ID, request()) }
@@ -191,6 +193,7 @@ class ChatServiceVertexFallbackTest {
         // Budget over MIN_ROUND_BUDGET_MS so the round actually starts; generate hangs way past it.
         val service = ChatService(
             vertex, tools, taskRepo, members, users, ChatProperties(turnDeadlineMs = 2_500), tracker, chatUsage, settings,
+            SimpleMeterRegistry(),
         )
         given(vertex.generate(any(), any())).willAnswer {
             Thread.sleep(30_000)

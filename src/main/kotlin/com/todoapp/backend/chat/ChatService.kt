@@ -17,6 +17,8 @@ import com.todoapp.backend.task.Recurrence
 import com.todoapp.backend.task.TaskEntity
 import com.todoapp.backend.task.TaskRepository
 import com.todoapp.backend.user.UserRepository
+import io.micrometer.core.instrument.Counter
+import io.micrometer.core.instrument.MeterRegistry
 import jakarta.annotation.PreDestroy
 import org.slf4j.LoggerFactory
 import org.springframework.core.io.ClassPathResource
@@ -60,6 +62,8 @@ class ChatService(
     private val tracker: ChatUsageTracker,
     private val chatUsage: ChatUsageRecorder,
     private val settings: AppSettingsService,
+    // Only used by detectToolNameLeak below.
+    private val meterRegistry: MeterRegistry,
 ) {
     private val log = LoggerFactory.getLogger(ChatService::class.java)
 
@@ -216,6 +220,7 @@ class ChatService(
                     throw ResponseStatusException(HttpStatus.BAD_GATEWAY, "Empty text from model")
                 }
                 val text = sanitizeUserFacingText(rawText)
+                detectToolNameLeak(userId, text)
                 val refused = looksLikeRefusal(text)
                 val ms = System.currentTimeMillis() - started
                 logTurn(userId, roundTrips, toolsCalled, promptTokens, responseTokens, totalTokens, ms, refused, error = null)
@@ -449,6 +454,34 @@ class ChatService(
     }
 
     /**
+     * The other half of the never-name-a-tool rule: the prompt tells the model, this tells us when the
+     * model ignored it anyway. It shipped after a reply that read "…için `createTask` aracını kullanmanı
+     * tavsiye ederim" — which not only named an internal function but told the user to call something
+     * only this service can call.
+     *
+     * **Detect-only, deliberately.** Deleting `createTask` out of that sentence leaves "…için aracını
+     * kullanmanı tavsiye ederim": a broken sentence that reads worse than the leak and hides the fact
+     * that the prompt is what needs fixing. [sanitizeUserFacingText] can strip safely because an id is a
+     * self-contained token; a tool name is the object of a clause. The remedy for a hit here is a prompt
+     * change, and this counter is how we find out one is due.
+     *
+     * Not called on the safety-refusal or tool-budget paths: both return server-authored constants that
+     * cannot contain a tool name. Tests pin those strings instead.
+     */
+    private fun detectToolNameLeak(userId: Long, text: String) {
+        val leaked = TOOL_NAME_PATTERN.findAll(text).map { it.value }.distinct().toList()
+        if (leaked.isEmpty()) return
+        log.warn("Chat reply named internal tool(s) {} to user {}", leaked, userId)
+        leaked.forEach { name ->
+            Counter.builder(TOOL_LEAK_METRIC)
+                .description("User-facing chat replies that named an internal tool")
+                .tag("tool", name)
+                .register(meterRegistry)
+                .increment()
+        }
+    }
+
+    /**
      * The `[Context: …]` block prepended to every user turn. It exists to answer the common questions
      * without a tool round-trip, so it is paid for on EVERY request — which is why the task lines are
      * one line each and capped low, and the rest is one-line summaries. Adding hearts, routines and the
@@ -620,6 +653,26 @@ class ChatService(
         private val ID_LEAK_PATTERNS = listOf(
             Regex("""#\d{1,12}\b"""),
             Regex("""(?i)\bid\s*[:#=]?\s*\d{1,12}\b"""),
+        )
+
+        /** Tagged by tool name, so a repeat offender is visible rather than just a total. */
+        const val TOOL_LEAK_METRIC: String = "chat.tool_name_leak"
+
+        /**
+         * Built FROM the declarations, so a tool added tomorrow is covered the day it is declared —
+         * a hand-kept list would silently stop covering the newest tools, which are the ones the
+         * prompt describes least.
+         *
+         * Case-sensitive on purpose: every name is camelCase and none of the 25 is an ordinary word in
+         * either language, so ignoring case would buy nothing and could start matching prose. The word
+         * boundaries are what keep "add step 'book flight'" from reading as `addStep`; longest-first
+         * ordering stops a shorter name claiming a position inside a longer one.
+         */
+        private val TOOL_NAME_PATTERN = Regex(
+            ChatToolDeclarations.tool.functionDeclarationsList
+                .map { it.name }
+                .sortedByDescending { it.length }
+                .joinToString("|", prefix = """\b(?:""", postfix = """)\b""") { Regex.escape(it) },
         )
         private val MULTISPACE = Regex("""\s{2,}""")
         private val CONTROL_CHARS = Regex("""[\x00-\x08\x0B-\x1F\x7F]""")

@@ -14,6 +14,7 @@ import com.todoapp.backend.settings.AppSetting
 import com.todoapp.backend.settings.AppSettingsService
 import com.todoapp.backend.task.TaskRepository
 import com.todoapp.backend.user.UserRepository
+import io.micrometer.core.instrument.simple.SimpleMeterRegistry
 import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
@@ -42,7 +43,7 @@ class ChatToolLoopMetaTest {
 
     private val service = ChatService(
         vertex, tools, taskRepo, members, users,
-        ChatProperties(maxToolIterations = 2), tracker, chatUsage, settings,
+        ChatProperties(maxToolIterations = 2), tracker, chatUsage, settings, SimpleMeterRegistry(),
     )
 
     @BeforeEach
