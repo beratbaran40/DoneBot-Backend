@@ -11,6 +11,12 @@ import jakarta.persistence.Index
 import jakarta.persistence.Table
 import java.time.Instant
 
+/**
+ * "No reminder", for a column that cannot hold a null. Mirrors `REMINDER_OFF` in the Android client;
+ * the two must agree, because this value round-trips between them untouched.
+ */
+const val REMINDER_OFF: Long = -1L
+
 @Entity
 @Table(
     name = "tasks",
@@ -80,6 +86,15 @@ class TaskEntity(
     @Column(name = "is_all_day", nullable = false)
     var isAllDay: Boolean = false,
 
+    /**
+     * Minutes before the task's start time. 0 = at the start time, positive = N minutes before,
+     * [REMINDER_OFF] = no reminder at all.
+     *
+     * The last one is a sentinel rather than a null because the column is `NOT NULL` on both sides of
+     * the wire. It matters that it is not 0: 0 is a reminder the user asked for, and the client's task
+     * form offers "Off" and "On time" as separate choices. This server stores and returns whatever it
+     * is given — the alarm itself is always scheduled device-side.
+     */
     @Column(name = "reminder_offset_minutes", nullable = false)
     var reminderOffsetMinutes: Long = 0L,
 

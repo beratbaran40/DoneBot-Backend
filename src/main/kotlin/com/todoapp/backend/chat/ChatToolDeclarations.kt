@@ -265,7 +265,8 @@ object ChatToolDeclarations {
                             .setType(Type.INTEGER)
                             .setDescription(
                                 "Reminder offset in minutes before the task. " +
-                                    "0 = no offset (default), 30 = remind 30 min before, etc. " +
+                                    "0 = remind at the task's start time (default), 30 = remind 30 min before, " +
+                                    "-1 = no reminder at all. Note 0 and -1 are DIFFERENT: 0 still rings. " +
                                     "Set when the user says 'remind me 15 min before', 'hatırlat 10 dakika önce', etc. " +
                                     "Use `reminderTimes` instead for a repeating task that reminds at fixed clock times.",
                             )
@@ -383,7 +384,8 @@ object ChatToolDeclarations {
                         Schema.newBuilder()
                             .setType(Type.INTEGER)
                             .setDescription(
-                                "New reminder offset in minutes before the task. 0 to clear. Optional.",
+                                "New reminder offset in minutes before the task. -1 turns the reminder OFF; " +
+                                    "0 does NOT — it means remind at the start time. Optional.",
                             )
                             .build(),
                     )

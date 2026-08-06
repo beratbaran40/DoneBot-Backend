@@ -4,6 +4,7 @@ import com.google.protobuf.Struct
 import com.google.protobuf.Value
 import com.todoapp.backend.group.GroupMemberRepository
 import com.todoapp.backend.group.GroupRepository
+import com.todoapp.backend.task.REMINDER_OFF
 import com.todoapp.backend.task.SubtaskRequest
 import com.todoapp.backend.task.TaskCategory
 import com.todoapp.backend.task.TaskEntity
@@ -448,8 +449,11 @@ class ChatToolService(
         val recurrence = args.fields["recurrence"]?.stringValue?.takeIf { it.isNotBlank() }
             ?.let { runCatching { Recurrence.valueOf(it.uppercase()) }.getOrNull() }
             ?: Recurrence.NONE
+        // Floor at REMINDER_OFF, not at 0. Clamping to 0 turned "no reminder" into "remind at the
+        // task's start time" — the client's two distinct choices collapsed into the noisier one, and
+        // the next sync pushed that back to every device.
         val reminderOffsetMinutes = args.fields["reminderOffsetMinutes"]?.numberValue?.toLong()
-            ?.coerceAtLeast(0L)
+            ?.coerceAtLeast(REMINDER_OFF)
             ?: 0L
         val isSecret = args.fields["isSecret"]?.boolValue ?: false
         val locationName = args.fields["locationName"]?.stringValue?.takeIf { it.isNotBlank() }
@@ -632,7 +636,7 @@ class ChatToolService(
             }
         }
         args.fields["reminderOffsetMinutes"]?.let { raw ->
-            val newValue = raw.numberValue.toLong().coerceAtLeast(0L)
+            val newValue = raw.numberValue.toLong().coerceAtLeast(REMINDER_OFF)
             if (newValue != task.reminderOffsetMinutes) {
                 task.reminderOffsetMinutes = newValue
                 changed = true
@@ -1040,9 +1044,10 @@ class ChatToolService(
         task.finishedOn?.let {
             struct.putFields("finishedOn", stringValue(LocalDate.ofEpochDay(it).toString()))
         }
-        if (task.reminderOffsetMinutes > 0L) {
-            struct.putFields("reminderOffsetMinutes", longValue(task.reminderOffsetMinutes))
-        }
+        // Negative is "no reminder" and 0 is "at the start time" — both are real answers, and omitting
+        // them left the bot unable to tell either from "I don't know", so it would offer to add a
+        // reminder a task already had, or claim one that was switched off.
+        struct.putFields("reminderOffsetMinutes", longValue(task.reminderOffsetMinutes))
         if (task.locationName != null) {
             struct.putFields("locationName", stringValue(task.locationName!!))
         }
