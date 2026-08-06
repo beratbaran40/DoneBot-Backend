@@ -90,11 +90,21 @@ data class ChatTurnMeta(
     /** Wall-clock duration on the server, ms. */
     val serverMs: Long,
     /**
-     * Names of the tools this turn executed, in call order. The client uses it to decide whether the
-     * turn changed anything server-side: before this existed it re-synced on `roundTrips > 1`, which is
-     * true of every read-tool turn, so "what's due today?" cost a full task fetch over the network.
+     * Names of the tools this turn executed, in call order — executed, not merely requested: the
+     * tool-budget cap returns without running the last batch, and those names are not listed here.
      *
      * Defaulted so an older client ignoring it and a newer client talking to an older backend both work.
      */
     val toolsCalled: List<String> = emptyList(),
+
+    /**
+     * Whether this turn wrote anything, so the client can decide to re-sync without keeping its own
+     * list of which tool names mutate — a list that silently goes stale every time a write tool is
+     * added server-side. Computed from [ChatToolService.MUTATING_TOOLS].
+     *
+     * Null, not false, when absent: a client must be able to tell "the backend says nothing changed"
+     * from "this backend predates the field, fall back to [toolsCalled]". A `false` default would make
+     * a new client skip a re-sync it actually needs against an older server.
+     */
+    val mutated: Boolean? = null,
 )

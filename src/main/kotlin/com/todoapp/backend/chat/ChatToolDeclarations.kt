@@ -101,7 +101,9 @@ object ChatToolDeclarations {
                     "group', 'what's assigned to me at home', 'ailedeki görevler ne durumda'. " +
                     "Group tasks can NEVER be created, edited, completed, rescheduled or deleted " +
                     "from chat — if the user asks for any of that, tell them to open that group's " +
-                    "screen in the app.",
+                    "screen in the app. Returns at most 25 tasks, soonest first: `count` is how many " +
+                    "came back, `totalCount` is how many there really are, and when `truncated` is " +
+                    "true say the list is partial and point the user at the group screen.",
             )
             .setParameters(
                 Schema.newBuilder()
@@ -143,7 +145,7 @@ object ChatToolDeclarations {
             .setParameters(
                 Schema.newBuilder()
                     .setType(Type.OBJECT)
-                    .putProperties("title", stringSchema("Task title."))
+                    .putProperties("title", stringSchema("Task title. Max 255 characters; longer is truncated."))
                     .putProperties("date", isoDateSchema("Task date, ISO YYYY-MM-DD."))
                     .putProperties(
                         "timeStart",
@@ -164,7 +166,10 @@ object ChatToolDeclarations {
                             )
                             .build(),
                     )
-                    .putProperties("description", stringSchema("Optional description."))
+                    .putProperties(
+                        "description",
+                        stringSchema("Optional description. Max 2000 characters; longer is truncated."),
+                    )
                     .putProperties(
                         "category",
                         Schema.newBuilder()
@@ -234,8 +239,8 @@ object ChatToolDeclarations {
                             .setType(Type.ARRAY)
                             .setItems(stringSchema("A single step title."))
                             .setDescription(
-                                "Ordered step titles, for a task done in stages. May be combined with " +
-                                    "`recurrence`: a repeating task's steps reset every occurrence " +
+                                "Ordered step titles, for a task done in stages. Max 20. May be combined " +
+                                    "with `recurrence`: a repeating task's steps reset every occurrence " +
                                     "('every morning: water, vitamin, stretch').",
                             )
                             .build(),
@@ -248,7 +253,9 @@ object ChatToolDeclarations {
                             .setDescription(
                                 "Absolute times of day to remind at on every occurrence, e.g. " +
                                     "['08:00','14:00','20:00'] for 'three times a day', 'günde 3 kez'. " +
-                                    "Max 8. Replaces reminderOffsetMinutes when set; needs a recurrence.",
+                                    "Max 8. Every entry must be a real HH:mm — an unparseable one is " +
+                                    "rejected, not skipped. Replaces reminderOffsetMinutes when set; " +
+                                    "needs a recurrence.",
                             )
                             .build(),
                     )
@@ -319,7 +326,10 @@ object ChatToolDeclarations {
                 Schema.newBuilder()
                     .setType(Type.OBJECT)
                     .putProperties("taskId", longSchema("Numeric task id."))
-                    .putProperties("title", stringSchema("New title (optional)."))
+                    .putProperties(
+                        "title",
+                        stringSchema("New title (optional). Max 255 characters; longer is truncated."),
+                    )
                     .putProperties("date", isoDateSchema("New date YYYY-MM-DD (optional)."))
                     .putProperties("timeStart", timeSchema("New start HH:mm (optional)."))
                     .putProperties("timeEnd", timeSchema("New end HH:mm (optional)."))
@@ -333,7 +343,10 @@ object ChatToolDeclarations {
                             )
                             .build(),
                     )
-                    .putProperties("description", stringSchema("New description (optional)."))
+                    .putProperties(
+                        "description",
+                        stringSchema("New description (optional). Max 2000 characters; longer is truncated."),
+                    )
                     .putProperties(
                         "category",
                         Schema.newBuilder()
@@ -357,7 +370,11 @@ object ChatToolDeclarations {
                         Schema.newBuilder()
                             .setType(Type.STRING)
                             .setDescription(
-                                "New recurrence (optional). One of: NONE, DAILY, WEEKLY, MONTHLY, YEARLY.",
+                                "New recurrence (optional). One of: NONE, DAILY, WEEKLY, MONTHLY, YEARLY. " +
+                                    "Changing this normalizes the whole repeat rule: NONE clears the " +
+                                    "interval, weekdays, end date, reminder times AND the finished-routine " +
+                                    "mark, and any change of frequency un-retires a finished routine. To " +
+                                    "change the rule itself rather than the frequency, use setTaskSchedule.",
                             )
                             .build(),
                     )
@@ -627,9 +644,11 @@ object ChatToolDeclarations {
                     "user changes the repeat frequency, the interval, the weekdays, the end date, or " +
                     "the reminder times of an existing task — updateTask CANNOT change any of those. " +
                     "Set recurrence=NONE to turn a routine back into a one-off; that also clears the " +
-                    "interval, weekdays, end date and reminder times. Omitted fields keep their " +
-                    "current value; pass an empty string (or an empty array for reminderTimes) to " +
-                    "clear one. Group tasks return an error.",
+                    "interval, weekdays, end date and reminder times. Changing the frequency of a " +
+                    "routine the user had finished also brings it back (say so in your reply). " +
+                    "Omitted fields keep their current value; pass an empty string (or an empty array " +
+                    "for reminderTimes) to clear one. An unparseable date or time is REJECTED and " +
+                    "clears nothing — only an empty value clears. Group tasks return an error.",
             )
             .setParameters(
                 Schema.newBuilder()
@@ -668,8 +687,9 @@ object ChatToolDeclarations {
                         "recurrenceUntil",
                         isoDateSchema(
                             "Last day the routine repeats, inclusive, ISO YYYY-MM-DD. Compute it from " +
-                                "the task's start date for 'for one more month', '2 hafta daha'. Pass an " +
-                                "empty string to make it open-ended again.",
+                                "the task's start date for 'for one more month', '2 hafta daha' — a " +
+                                "phrase like 'end of next month' is rejected, send the computed date. " +
+                                "Pass an empty string to make it open-ended again.",
                         ),
                     )
                     .putProperties(
@@ -680,8 +700,9 @@ object ChatToolDeclarations {
                             .setDescription(
                                 "Absolute times of day to remind at on every occurrence, e.g. " +
                                     "['08:00','14:00','20:00'] for 'three times a day', 'günde 3 kez'. " +
-                                    "Max 8. Needs a recurrence and replaces reminderOffsetMinutes. Pass " +
-                                    "an empty array to clear all of them.",
+                                    "Max 8, every entry a real HH:mm — an unparseable one is rejected, " +
+                                    "not skipped. Needs a recurrence and replaces reminderOffsetMinutes. " +
+                                    "Pass an empty array to clear all of them.",
                             )
                             .build(),
                     )
@@ -715,8 +736,11 @@ object ChatToolDeclarations {
                     .putProperties(
                         "on",
                         isoDateSchema(
-                            "Day the routine is considered finished, ISO YYYY-MM-DD. Defaults to today. " +
-                                "Ignored when finished=false.",
+                            "Day the routine is considered finished, ISO YYYY-MM-DD. Defaults to today; " +
+                                "must be a real date, a phrase like 'end of last month' is rejected. " +
+                                "Ignored when finished=false. Finishing a routine that is ALREADY " +
+                                "finished returns noop:true and keeps the day it was finished on — pass " +
+                                "`on` explicitly only when the user wants to CHANGE that day.",
                         ),
                     )
                     .addAllRequired(listOf("taskId", "finished"))
@@ -734,8 +758,11 @@ object ChatToolDeclarations {
                     "Steps you pass with their existing stepId keep their completion state and are " +
                     "reordered; steps you leave OUT are DELETED. For a single change still prefer " +
                     "addStep / renameStep / setStepCompletion / deleteStep. Pass an empty array to " +
-                    "strip every step and turn it back into a plain task. Get the stepIds from " +
-                    "findTaskByTitle. Group tasks return an error.",
+                    "strip every step and turn it back into a plain task — that one is destructive and " +
+                    "REQUIRES_CONFIRMATION: list the steps you are about to delete and get a yes " +
+                    "first. Max 20 steps, each with a non-blank title (a blank one is rejected rather " +
+                    "than deleting the step it matched). Get the stepIds from findTaskByTitle. Group " +
+                    "tasks return an error.",
             )
             .setParameters(
                 Schema.newBuilder()
@@ -767,7 +794,9 @@ object ChatToolDeclarations {
                                     .addAllRequired(listOf("title"))
                                     .build(),
                             )
-                            .setDescription("The complete new step list, in the order it should appear.")
+                            .setDescription(
+                                "The complete new step list, in the order it should appear. Max 20.",
+                            )
                             .build(),
                     )
                     .addAllRequired(listOf("taskId", "steps"))

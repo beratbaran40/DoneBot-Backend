@@ -4,12 +4,14 @@ import com.google.protobuf.Struct
 import com.google.protobuf.Value
 import com.todoapp.backend.group.GroupMemberRepository
 import com.todoapp.backend.group.GroupRepository
+import com.todoapp.backend.task.SubtaskRequest
 import com.todoapp.backend.task.TaskCategory
 import com.todoapp.backend.task.TaskEntity
 import com.todoapp.backend.task.TaskRepository
 import com.todoapp.backend.task.TaskSubtaskEntity
 import com.todoapp.backend.task.TaskSubtaskRepository
 import com.todoapp.backend.task.Recurrence
+import com.todoapp.backend.task.reconcileSubtasks
 import org.slf4j.LoggerFactory
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
@@ -144,12 +146,12 @@ class ChatToolService(
         // §7.14 defense in depth: group tasks are created with isSecret=false, but a personal secret
         // task moved into a group via POST /tasks would carry the flag, and a secret title must never
         // reach Vertex.
-        val tasks = taskRepo.findAllByFamilyGroupId(groupId)
+        val matched = taskRepo.findAllByFamilyGroupId(groupId)
             .filterNot { it.isSecret }
             .filter { includeCompleted || !it.isCompleted }
             .filter { !onlyMine || it.assignedToUserId == userId }
             .sortedBy { it.date }
-            .take(MAX_GROUP_TASKS)
+        val tasks = matched.take(MAX_GROUP_TASKS)
         return objectValue(
             "readOnly" to boolValue(true),
             "tasks" to listValue(
@@ -163,7 +165,13 @@ class ChatToolService(
                     )
                 },
             ),
+            // `count` is the length of the list above, as everywhere else in this file. `totalCount` is
+            // what the group actually has: deriving the total from the truncated list told the model the
+            // group had exactly 25 tasks, contradicting the [Context] block's own figure with no way to
+            // tell which was right. Counted after the filters, so it can never re-expose a secret task.
             "count" to longValue(tasks.size.toLong()),
+            "totalCount" to longValue(matched.size.toLong()),
+            "truncated" to boolValue(matched.size > tasks.size),
         )
     }
 
@@ -307,24 +315,108 @@ class ChatToolService(
         }
         return ScheduleRule(
             interval = interval,
-            byDay = byDay?.takeIf { recurrence == Recurrence.WEEKLY },
+            byDay = byDay,
             until = until,
             reminderTimes = times,
-        )
+        ).normalizedFor(recurrence)
     }
 
-    /** The four extended-recurrence columns, moved around as one value so the clamps can't be split up. */
+    /**
+     * The frequency and the four extended-recurrence columns, moved around as one value so the clamps
+     * can't be split up — and so the frequency can't be written without them. `updateTask` used to set
+     * `recurrence = NONE` and leave "every 2 weeks, MON/FRI, until 2026-09-01" behind on a task the
+     * client then rendered as a one-off with recurring alarms.
+     */
     private data class ScheduleRule(
+        val recurrence: Recurrence = Recurrence.NONE,
         val interval: Int = 1,
         val byDay: String? = null,
         val until: Long? = null,
         val reminderTimes: List<Long>? = null,
     )
 
+    /** Drops what a frequency cannot carry: no rule at all without one, and weekdays only for WEEKLY. */
+    private fun ScheduleRule.normalizedFor(next: Recurrence): ScheduleRule =
+        if (next == Recurrence.NONE) {
+            ScheduleRule()
+        } else {
+            copy(recurrence = next, byDay = byDay?.takeIf { next == Recurrence.WEEKLY })
+        }
+
+    /** The five schedule columns read back off the entity as one value. */
+    private fun TaskEntity.scheduleRule(): ScheduleRule = ScheduleRule(
+        recurrence = recurrence,
+        interval = recurrenceInterval,
+        byDay = recurrenceByDay,
+        until = recurrenceUntil,
+        reminderTimes = reminderTimes
+            ?.split(',')
+            ?.mapNotNull { it.trim().toLongOrNull() }
+            ?.takeIf { it.isNotEmpty() },
+    )
+
+    /**
+     * The ONLY place the frequency and its four rule columns are written. Writing them apart is what
+     * let `updateTask` produce a NONE task still carrying a repeat rule.
+     *
+     * It also enforces the one invariant that spans the pair: `finishedOn` ("I'm done with this
+     * routine") only means something while there is a frequency to stop. So a task turned into a
+     * one-off loses it, and so does a routine whose frequency changed — "make it weekly again" is the
+     * user bringing it back, not asking for a routine that stays retired. Changing only the interval,
+     * weekdays or reminder clock is a tweak, and leaves the retirement alone.
+     *
+     * Returns whether anything actually changed, which is what the tools report as `noop`.
+     */
+    private fun applySchedule(task: TaskEntity, next: ScheduleRule): Boolean {
+        val current = task.scheduleRule()
+        val nextFinishedOn = when {
+            next.recurrence == Recurrence.NONE -> null
+            next.recurrence != current.recurrence -> null
+            else -> task.finishedOn
+        }
+        val changed = next != current || nextFinishedOn != task.finishedOn
+        task.recurrence = next.recurrence
+        task.recurrenceInterval = next.interval
+        task.recurrenceByDay = next.byDay
+        task.recurrenceUntil = next.until
+        task.reminderTimes = next.reminderTimes?.joinToString(",")
+        task.finishedOn = nextFinishedOn
+        return changed
+    }
+
+    /**
+     * The dates and clock times the model supplied, checked BEFORE anything is written. Returns a
+     * message for the model, or null when everything round-trips.
+     *
+     * A BLANK value is not an error — that is the documented "clear this field". Conflating the two is
+     * exactly the bug this exists to prevent: `runCatching { LocalDate.parse(it) }.getOrNull()` turned
+     * "until the end of next month" into null, which under the present-means-clear rule WIPED the
+     * user's end date and reported `ok:true`. Same shape as [runBulkRescheduleTasks], which has always
+     * refused an unparseable date rather than substituting one.
+     */
+    private fun scheduleArgsError(args: Struct): String? {
+        args.fields["recurrenceUntil"]?.stringValue?.takeIf { it.isNotBlank() }?.let {
+            if (!isIsoDate(it)) {
+                return "recurrenceUntil must be an ISO date like 2026-09-01 — pass an empty string to clear it"
+            }
+        }
+        args.fields["reminderTimes"]?.listValue?.valuesList?.forEach { raw ->
+            if (!isTimeOfDay(raw.stringValue)) {
+                return "reminderTimes entries must be HH:mm clock times — pass an empty array to clear them"
+            }
+        }
+        return null
+    }
+
+    private fun isIsoDate(raw: String): Boolean = runCatching { LocalDate.parse(raw) }.isSuccess
+
+    private fun isTimeOfDay(raw: String): Boolean = runCatching { parseTime(raw) }.isSuccess
+
     private fun runCreateTask(userId: Long, args: Struct): Value {
         val title = args.fields["title"]?.stringValue.orEmpty().ifBlank {
             return errorPayload("title is required")
-        }
+        }.capped(MAX_TITLE)
+        scheduleArgsError(args)?.let { return errorPayload(it) }
         val date = LocalDate.parse(args.fields["date"]?.stringValue.orEmpty())
         val isAllDay = args.fields["isAllDay"]?.boolValue ?: false
         // For all-day tasks we normalize to 00:00 → 23:59:59 so listing/sorting code paths
@@ -346,12 +438,13 @@ class ChatToolService(
                 ?: (start + DEFAULT_DURATION_SECONDS).coerceAtMost(SECONDS_PER_DAY - 1)
         }
         val description = args.fields["description"]?.stringValue?.takeIf { it.isNotBlank() }
+            ?.capped(MAX_DESCRIPTION)
         val category = args.fields["category"]?.stringValue?.takeIf { it.isNotBlank() }
             ?.let { runCatching { TaskCategory.valueOf(it.uppercase()) }.getOrNull() }
             ?: TaskCategory.PERSONAL
         val customCategoryName = args.fields["customCategoryName"]?.stringValue?.takeIf { it.isNotBlank() }
             ?.takeIf { category == TaskCategory.OTHER }
-            ?.take(MAX_CUSTOM_CATEGORY_NAME)
+            ?.capped(MAX_CUSTOM_CATEGORY_NAME)
         val recurrence = args.fields["recurrence"]?.stringValue?.takeIf { it.isNotBlank() }
             ?.let { runCatching { Recurrence.valueOf(it.uppercase()) }.getOrNull() }
             ?: Recurrence.NONE
@@ -360,9 +453,9 @@ class ChatToolService(
             ?: 0L
         val isSecret = args.fields["isSecret"]?.boolValue ?: false
         val locationName = args.fields["locationName"]?.stringValue?.takeIf { it.isNotBlank() }
-            ?.take(MAX_LOCATION_NAME)
+            ?.capped(MAX_LOCATION_NAME)
         val locationAddress = args.fields["locationAddress"]?.stringValue?.takeIf { it.isNotBlank() }
-            ?.take(MAX_LOCATION_ADDRESS)
+            ?.capped(MAX_LOCATION_ADDRESS)
         val locationLat = args.fields["locationLat"]?.numberValue?.takeIf { it != 0.0 || locationName != null }
             ?.toBigDecimal()
         val locationLng = args.fields["locationLng"]?.numberValue?.takeIf { it != 0.0 || locationName != null }
@@ -370,9 +463,10 @@ class ChatToolService(
         // On create an absent field means "use the default", so the fallback is the empty rule.
         // setTaskSchedule passes the stored rule instead, which is the whole reason this is shared.
         val rule = parseScheduleRule(args, recurrence, ScheduleRule())
-        val steps = args.fields["steps"]?.listValue?.valuesList
-            ?.mapNotNull { it.stringValue?.trim()?.takeIf(String::isNotEmpty)?.take(MAX_STEP_TITLE) }
-            .orEmpty()
+        val stepTitles = args.fields["steps"]?.listValue?.valuesList.orEmpty()
+        if (stepTitles.size > MAX_STEPS) return tooManyStepsError()
+        val steps = stepTitles
+            .mapNotNull { it.stringValue?.trim()?.takeIf(String::isNotEmpty)?.capped(MAX_STEP_TITLE) }
 
         // §4.12 for the chat path. The model never supplies an idempotency key, so we derive a
         // deterministic one from (user, title, date, start, today): a turn retried within the same day
@@ -385,6 +479,8 @@ class ChatToolService(
         // the client (isThinking gate + 3s send throttle), so the duplicate we actually see is a
         // sequential retry, not a concurrent one. Catching the violation inside `execute`'s transaction
         // would leave it rollback-only and take down the whole turn instead of just this tool call.
+        // The other way into that trap — an over-long value overflowing its column — is closed by
+        // [capped], which every model-supplied string on this path goes through.
         val clientTaskId = chatIdempotencyKey(userId, title, date.toEpochDay(), start)
         taskRepo.findByOwnerIdAndClientTaskId(userId, clientTaskId)?.let { existing ->
             return objectValue(
@@ -406,7 +502,7 @@ class ChatToolService(
                 isSecret = isSecret,
                 category = category,
                 customCategoryName = customCategoryName,
-                recurrence = recurrence,
+                recurrence = rule.recurrence,
                 isAllDay = isAllDay,
                 reminderOffsetMinutes = reminderOffsetMinutes,
                 locationLat = locationLat,
@@ -466,26 +562,39 @@ class ChatToolService(
         .takeIf { it.isNotBlank() }
 
     private fun runUpdateTask(userId: Long, args: Struct): Value = withOwnedTask(userId, args) { task ->
+        // Parsed BEFORE the first assignment below. These used to throw mid-update, and because the
+        // entity is managed inside `execute`'s transaction, the fields already assigned were flushed
+        // anyway — the tool reported an error and still renamed the task.
+        val newDate = args.fields["date"]?.stringValue?.takeIf { it.isNotBlank() }?.let {
+            if (!isIsoDate(it)) return@withOwnedTask errorPayload("date must be an ISO date like 2026-09-01")
+            LocalDate.parse(it).toEpochDay()
+        }
+        val newStart = args.fields["timeStart"]?.stringValue?.takeIf { it.isNotBlank() }?.let {
+            if (!isTimeOfDay(it)) return@withOwnedTask errorPayload("timeStart must be an HH:mm clock time")
+            parseTime(it)
+        }
+        val newEnd = args.fields["timeEnd"]?.stringValue?.takeIf { it.isNotBlank() }?.let {
+            if (!isTimeOfDay(it)) return@withOwnedTask errorPayload("timeEnd must be an HH:mm clock time")
+            parseTime(it)
+        }
+
         // Track whether any field actually changed so the model can phrase its reply
         // without claiming a change that didn't happen ("Already at 3pm — nothing to do").
         var changed = false
-        args.fields["title"]?.stringValue?.takeIf { it.isNotBlank() }?.let {
+        args.fields["title"]?.stringValue?.takeIf { it.isNotBlank() }?.capped(MAX_TITLE)?.let {
             if (it != task.title) { task.title = it; changed = true }
         }
-        args.fields["date"]?.stringValue?.takeIf { it.isNotBlank() }?.let {
-            val parsed = LocalDate.parse(it).toEpochDay()
-            if (parsed != task.date) { task.date = parsed; changed = true }
+        newDate?.let {
+            if (it != task.date) { task.date = it; changed = true }
         }
-        args.fields["timeStart"]?.stringValue?.takeIf { it.isNotBlank() }?.let {
-            val parsed = parseTime(it)
-            if (parsed != task.timeStart) { task.timeStart = parsed; changed = true }
+        newStart?.let {
+            if (it != task.timeStart) { task.timeStart = it; changed = true }
         }
-        args.fields["timeEnd"]?.stringValue?.takeIf { it.isNotBlank() }?.let {
-            val parsed = parseTime(it)
-            if (parsed != task.timeEnd) { task.timeEnd = parsed; changed = true }
+        newEnd?.let {
+            if (it != task.timeEnd) { task.timeEnd = it; changed = true }
         }
         args.fields["description"]?.stringValue?.let {
-            val newValue = it.ifBlank { null }
+            val newValue = it.ifBlank { null }?.capped(MAX_DESCRIPTION)
             if (newValue != task.description) { task.description = newValue; changed = true }
         }
         args.fields["category"]?.stringValue?.takeIf { it.isNotBlank() }?.let { raw ->
@@ -494,7 +603,7 @@ class ChatToolService(
             }
         }
         args.fields["customCategoryName"]?.stringValue?.let { raw ->
-            val newValue = raw.ifBlank { null }?.take(MAX_CUSTOM_CATEGORY_NAME)
+            val newValue = raw.ifBlank { null }?.capped(MAX_CUSTOM_CATEGORY_NAME)
                 ?.takeIf { task.category == TaskCategory.OTHER }
             if (newValue != task.customCategoryName) {
                 task.customCategoryName = newValue
@@ -502,8 +611,12 @@ class ChatToolService(
             }
         }
         args.fields["recurrence"]?.stringValue?.takeIf { it.isNotBlank() }?.let { raw ->
-            runCatching { Recurrence.valueOf(raw.uppercase()) }.getOrNull()?.let {
-                if (it != task.recurrence) { task.recurrence = it; changed = true }
+            runCatching { Recurrence.valueOf(raw.uppercase()) }.getOrNull()?.let { next ->
+                // Through applySchedule, never by assigning `recurrence` alone: switching a routine to
+                // NONE has to take the interval, weekdays, end date, reminder times and the
+                // finished-routine mark with it. Called even when the frequency already matches, so a
+                // row left inconsistent by an older build heals on the next write.
+                if (applySchedule(task, task.scheduleRule().normalizedFor(next))) changed = true
             }
         }
         args.fields["isAllDay"]?.let { raw ->
@@ -534,14 +647,14 @@ class ChatToolService(
         }
         // Location fields: empty-string clears, omitted leaves the existing value alone.
         args.fields["locationName"]?.stringValue?.let { raw ->
-            val newValue = raw.takeIf { it.isNotBlank() }?.take(MAX_LOCATION_NAME)
+            val newValue = raw.takeIf { it.isNotBlank() }?.capped(MAX_LOCATION_NAME)
             if (newValue != task.locationName) {
                 task.locationName = newValue
                 changed = true
             }
         }
         args.fields["locationAddress"]?.stringValue?.let { raw ->
-            val newValue = raw.takeIf { it.isNotBlank() }?.take(MAX_LOCATION_ADDRESS)
+            val newValue = raw.takeIf { it.isNotBlank() }?.capped(MAX_LOCATION_ADDRESS)
             if (newValue != task.locationAddress) {
                 task.locationAddress = newValue
                 changed = true
@@ -571,10 +684,10 @@ class ChatToolService(
     private fun runSetTaskLocation(userId: Long, args: Struct): Value = withOwnedTask(userId, args) { task ->
         // Empty string in any field clears it; omitted means leave alone.
         args.fields["locationName"]?.stringValue?.let { raw ->
-            task.locationName = raw.takeIf { it.isNotBlank() }?.take(MAX_LOCATION_NAME)
+            task.locationName = raw.takeIf { it.isNotBlank() }?.capped(MAX_LOCATION_NAME)
         }
         args.fields["locationAddress"]?.stringValue?.let { raw ->
-            task.locationAddress = raw.takeIf { it.isNotBlank() }?.take(MAX_LOCATION_ADDRESS)
+            task.locationAddress = raw.takeIf { it.isNotBlank() }?.capped(MAX_LOCATION_ADDRESS)
         }
         args.fields["locationLat"]?.let { raw -> task.locationLat = raw.numberValue.toBigDecimal() }
         args.fields["locationLng"]?.let { raw -> task.locationLng = raw.numberValue.toBigDecimal() }
@@ -607,27 +720,15 @@ class ChatToolService(
      * can match against instead of sixteen parameters on updateTask.
      */
     private fun runSetTaskSchedule(userId: Long, args: Struct): Value = withOwnedTask(userId, args) { task ->
+        // After the ownership gate, never before it: a validation message emitted first would confirm
+        // that someone else's task id exists.
+        scheduleArgsError(args)?.let { return@withOwnedTask errorPayload(it) }
         val recurrence = args.fields["recurrence"]?.stringValue?.takeIf { it.isNotBlank() }
             ?.let { runCatching { Recurrence.valueOf(it.uppercase()) }.getOrNull() }
             ?: task.recurrence
-        val current = ScheduleRule(
-            interval = task.recurrenceInterval,
-            byDay = task.recurrenceByDay,
-            until = task.recurrenceUntil,
-            reminderTimes = task.reminderTimes
-                ?.split(',')
-                ?.mapNotNull { it.trim().toLongOrNull() }
-                ?.takeIf { it.isNotEmpty() },
-        )
         // Absence means "leave alone" here, which is why the stored rule is the fallback — createTask
         // passes the empty one so absence means "default". Same clamps either way.
-        val next = parseScheduleRule(args, recurrence, current)
-        val changed = recurrence != task.recurrence || next != current
-        task.recurrence = recurrence
-        task.recurrenceInterval = next.interval
-        task.recurrenceByDay = next.byDay
-        task.recurrenceUntil = next.until
-        task.reminderTimes = next.reminderTimes?.joinToString(",")
+        val changed = applySchedule(task, parseScheduleRule(args, recurrence, task.scheduleRule()))
         objectValue(
             "ok" to boolValue(true),
             "noop" to boolValue(!changed),
@@ -651,12 +752,20 @@ class ChatToolService(
                 "not a routine — this task does not repeat; use setTaskCompletion to tick it off",
             )
         }
-        val on = if (finished) {
-            args.fields["on"]?.stringValue?.takeIf { it.isNotBlank() }
-                ?.let { runCatching { LocalDate.parse(it).toEpochDay() }.getOrNull() }
-                ?: LocalDate.now().toEpochDay()
-        } else {
-            null
+        val explicitOn = args.fields["on"]?.stringValue?.takeIf { it.isNotBlank() }
+        if (explicitOn != null && !isIsoDate(explicitOn)) {
+            // Substituting today for "end of last month" retired the routine a month late and still
+            // reported success, so the user's history for that window was silently wrong.
+            return@withOwnedTask errorPayload("on must be an ISO date like 2026-08-06")
+        }
+        val on = when {
+            !finished -> null
+            // Already retired and no explicit date: re-finishing is the model confirming, not the user
+            // re-deciding. Re-stamping would move the retirement forward and flip every day in between
+            // back into the routine.
+            task.finishedOn != null && explicitOn == null -> task.finishedOn
+            explicitOn != null -> LocalDate.parse(explicitOn).toEpochDay()
+            else -> LocalDate.now().toEpochDay()
         }
         val noop = task.finishedOn == on
         task.finishedOn = on
@@ -674,40 +783,39 @@ class ChatToolService(
      * rewrites or reorders the list, and what the per-step tools would need three or four round-trips
      * to achieve.
      *
-     * Same algorithm as `TaskSubtaskReconciler.reconcileSubtasks` (stepId ≡ remoteId, order re-packed
-     * from the incoming list, anything absent deleted). Kept as its own loop rather than calling that
-     * function: it takes `List<SubtaskRequest>` JSON DTOs, and building those from a protobuf Struct is
-     * more code than this. If you change the reconcile rules there, change them here too.
+     * The reconcile itself is `TaskSubtaskReconciler.reconcileSubtasks` — the same function the REST
+     * task and group-task paths use (stepId ≡ remoteId, order re-packed from the incoming list,
+     * anything absent deleted). This used to be a hand-copied second implementation of it, and the two
+     * had already drifted. All that is left here is mapping the protobuf Struct into its DTO.
      */
     private fun runSetSteps(userId: Long, args: Struct): Value = withOwnedTask(userId, args) { task ->
         val incoming = args.fields["steps"]?.listValue?.valuesList
             ?: return@withOwnedTask errorPayload(
                 "steps is required (pass an empty array to remove every step)",
             )
-        val existing = subtaskRepo.findAllByTaskIdOrderByOrderIndexAsc(task.id)
-        val existingById = existing.associateBy { it.id }
-        val kept = mutableSetOf<Long>()
-        incoming.forEachIndexed { index, raw ->
-            val fields = raw.structValue.fieldsMap
-            val title = fields["title"]?.stringValue?.trim()?.takeIf { it.isNotBlank() }?.take(MAX_STEP_TITLE)
-                ?: return@forEachIndexed
-            val match = fields["stepId"]?.numberValue?.toLong()?.let { existingById[it] }
-            // A step carried over keeps its tick unless the model explicitly said otherwise; a brand-new
-            // one starts unchecked. Losing ticks on a reorder would be the obvious failure here.
-            val done = fields["isCompleted"]?.boolValue ?: match?.isCompleted ?: false
-            if (match != null) {
-                match.title = title
-                match.isCompleted = done
-                match.orderIndex = index
-                subtaskRepo.save(match)
-                kept += match.id
-            } else {
-                kept += subtaskRepo.save(
-                    TaskSubtaskEntity(taskId = task.id, title = title, isCompleted = done, orderIndex = index),
-                ).id
-            }
+        if (incoming.size > MAX_STEPS) return@withOwnedTask tooManyStepsError()
+        val existingById = subtaskRepo.findAllByTaskIdOrderByOrderIndexAsc(task.id).associateBy { it.id }
+        // Reject, don't skip. Skipping a blank-titled entry DELETED the step it matched — the list is
+        // authoritative, so anything left out is removed — which is silent data loss in a tool the
+        // model may call without confirmation.
+        if (incoming.any { it.structValue.fieldsMap["title"]?.stringValue?.isBlank() != false }) {
+            return@withOwnedTask errorPayload("every step needs a non-blank title")
         }
-        existing.filter { it.id !in kept }.forEach { subtaskRepo.delete(it) }
+        val requests = incoming.map { raw ->
+            val fields = raw.structValue.fieldsMap
+            val match = fields["stepId"]?.numberValue?.toLong()?.let { existingById[it] }
+            SubtaskRequest(
+                // The matched step's own id, not the raw stepId: an id belonging to someone else's task
+                // has to fall through to "brand-new step" rather than address a row we didn't check.
+                remoteId = match?.id,
+                title = fields.getValue("title").stringValue.trim().capped(MAX_STEP_TITLE),
+                // A step carried over keeps its tick unless the model explicitly said otherwise; a
+                // brand-new one starts unchecked. Losing ticks on a reorder would be the obvious
+                // failure here.
+                isCompleted = fields["isCompleted"]?.boolValue ?: match?.isCompleted ?: false,
+            )
+        }
+        reconcileSubtasks(subtaskRepo, task.id, requests)
         recomputeStagedParentCompletion(task)
         objectValue(
             "ok" to boolValue(true),
@@ -716,7 +824,7 @@ class ChatToolService(
     }
 
     private fun runAddStep(userId: Long, args: Struct): Value = withOwnedTask(userId, args) { task ->
-        val title = args.fields["title"]?.stringValue?.trim()?.takeIf { it.isNotBlank() }?.take(MAX_STEP_TITLE)
+        val title = args.fields["title"]?.stringValue?.trim()?.takeIf { it.isNotBlank() }?.capped(MAX_STEP_TITLE)
             ?: return@withOwnedTask errorPayload("title is required")
         val order = subtaskRepo.findAllByTaskIdOrderByOrderIndexAsc(task.id).size
         subtaskRepo.save(TaskSubtaskEntity(taskId = task.id, title = title, orderIndex = order))
@@ -728,7 +836,7 @@ class ChatToolService(
     }
 
     private fun runRenameStep(userId: Long, args: Struct): Value {
-        val title = args.fields["title"]?.stringValue?.trim()?.takeIf { it.isNotBlank() }?.take(MAX_STEP_TITLE)
+        val title = args.fields["title"]?.stringValue?.trim()?.takeIf { it.isNotBlank() }?.capped(MAX_STEP_TITLE)
             ?: return errorPayload("title is required")
         val step = ownedStep(userId, args) ?: return stepLookupError(userId, args)
         val task = taskRepo.findById(step.taskId).get()
@@ -986,6 +1094,20 @@ class ChatToolService(
         return "%02d:%02d".format(time.hour, time.minute)
     }
 
+    /**
+     * Every string the model supplies is untrusted for LENGTH as well as for content. An over-long
+     * value raises `DataIntegrityViolationException` at flush — inside [execute]'s transaction, which
+     * marks it rollback-only, so one bad tool call becomes an `UnexpectedRollbackException` thrown from
+     * the proxy AFTER `runCatching` already returned its tidy error payload: an HTTP 500 for the whole
+     * chat turn instead of one failed tool. Truncating is the only behaviour that keeps the turn alive,
+     * and it is honest because [taskValue] hands the STORED value back — the model confirms what was
+     * actually written, not what it sent.
+     *
+     * Surrogate-aware: a plain `take(255)` can split a pair and store a lone half.
+     */
+    private fun String.capped(max: Int): String =
+        if (length <= max) this else take(if (Character.isHighSurrogate(this[max - 1])) max - 1 else max)
+
     private fun stringValue(s: String): Value = Value.newBuilder().setStringValue(s).build()
     private fun boolValue(b: Boolean): Value = Value.newBuilder().setBoolValue(b).build()
     private fun longValue(n: Long): Value = Value.newBuilder().setNumberValue(n.toDouble()).build()
@@ -1001,17 +1123,39 @@ class ChatToolService(
     private fun errorPayload(message: String): Value =
         objectValue("error" to stringValue(message))
 
+    /** Shared by createTask and setSteps so one cap can never be enforced with two different messages. */
+    private fun tooManyStepsError(): Value =
+        errorPayload("too many steps — a task can have at most $MAX_STEPS")
+
     companion object {
         private const val DEFAULT_DURATION_SECONDS = 30L * 60L
         private const val DEFAULT_START_SECONDS = 9L * 3600L
-        private const val MAX_STEP_TITLE = 255
         private const val SECONDS_PER_DAY = 24L * 3600L
         private const val WEEK_LOOKBACK_DAYS = 6L
         private const val MONTH_LOOKBACK_DAYS = 29L
         private const val PERCENT_SCALE = 100.0
+
+        /**
+         * Column widths, not preferences. Every one of these mirrors a VARCHAR in the schema, because
+         * the failure mode of an uncapped model-supplied string is not a long title — it is a
+         * `DataIntegrityViolationException` at flush time that 500s the whole chat turn (see [capped]).
+         * `MAX_TITLE` is deliberately separate from `MAX_STEP_TITLE` despite both being 255: they are
+         * different columns and widening one must not silently widen the other.
+         */
+        private const val MAX_TITLE = 255
+        private const val MAX_DESCRIPTION = 2000
+        private const val MAX_STEP_TITLE = 255
         private const val MAX_CUSTOM_CATEGORY_NAME = 64
         private const val MAX_LOCATION_NAME = 120
         private const val MAX_LOCATION_ADDRESS = 500
+
+        /**
+         * A step list is written one INSERT at a time inside the turn deadline, so its length is the
+         * one model-supplied size that costs wall-clock rather than bytes. Well past any hand-managed
+         * checklist; raise it if the app's own edit screen ever allows more, because a list the user
+         * legitimately built there must not be un-editable from chat.
+         */
+        private const val MAX_STEPS = 20
 
         /** One group's shared tasks are a summary, not a listing — the app's group screen is the listing. */
         private const val MAX_GROUP_TASKS = 25
@@ -1027,5 +1171,18 @@ class ChatToolService(
          */
         private const val GROUP_TASK_BLOCKED =
             "group_task_blocked: shared group tasks must be edited from the group screen, not chat"
+
+        /**
+         * Every branch of [execute]'s dispatch that writes. Exists so `ChatService` can tell the client
+         * "this turn changed something" without the client carrying its own copy of these names — a copy
+         * that silently goes stale the moment a write tool is added here. Adding a tool to the `when`
+         * above without adding it here is the mistake this comment is trying to prevent.
+         */
+        internal val MUTATING_TOOLS: Set<String> = setOf(
+            "createTask", "updateTask", "deleteTask", "setTaskCompletion", "setTaskSecret",
+            "setTaskLocation", "setTaskSchedule", "finishRoutine",
+            "setSteps", "addStep", "renameStep", "setStepCompletion", "deleteStep",
+            "bulkSetTaskCompletion", "bulkDeleteTasks", "bulkRescheduleTasks",
+        )
     }
 }

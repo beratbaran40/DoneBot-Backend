@@ -166,6 +166,83 @@ class ChatToolScheduleTest {
         assertThat(task.recurrence).isEqualTo(Recurrence.WEEKLY)
     }
 
+    @Test
+    fun `an unparseable recurrenceUntil is rejected instead of silently clearing the end date`() {
+        val task = stubTask(recurrence = Recurrence.WEEKLY, until = 20_000L)
+
+        val payload = tools.execute(
+            USER_ID,
+            "setTaskSchedule",
+            structOf("taskId" to TASK_ID, "recurrenceUntil" to "end of next month"),
+        ).toString()
+
+        // A present-but-unparseable value used to land as null, which under the present-means-clear
+        // rule WIPED the end date and still reported ok:true — the bot then confirmed an extension it
+        // had just deleted.
+        assertThat(payload).contains("recurrenceUntil must be an ISO date")
+        assertThat(task.recurrenceUntil).isEqualTo(20_000L)
+    }
+
+    @Test
+    fun `an unparseable reminder time is rejected rather than dropped from the list`() {
+        val task = stubTask(recurrence = Recurrence.DAILY, reminderTimes = "28800")
+
+        val payload = tools.execute(
+            USER_ID,
+            "setTaskSchedule",
+            structOf("taskId" to TASK_ID, "reminderTimes" to listOf("08:00", "lunchtime")),
+        ).toString()
+
+        assertThat(payload).contains("reminderTimes entries must be HH:mm")
+        assertThat(task.reminderTimes).isEqualTo("28800")
+    }
+
+    @Test
+    fun `updateTask switching a routine to NONE clears the rule it can no longer honour`() {
+        val task = stubTask(
+            recurrence = Recurrence.WEEKLY,
+            interval = 2,
+            byDay = "MONDAY,FRIDAY",
+            until = 20_000L,
+            reminderTimes = "28800,72000",
+        ).apply { finishedOn = 19_500L }
+
+        // updateTask still declares `recurrence`, and it used to write that column alone — leaving a
+        // one-off carrying "every 2 weeks, MON/FRI, two alarms a day" for the client to schedule.
+        tools.execute(USER_ID, "updateTask", structOf("taskId" to TASK_ID, "recurrence" to "NONE"))
+
+        assertThat(task.recurrence).isEqualTo(Recurrence.NONE)
+        assertThat(task.recurrenceInterval).isEqualTo(1)
+        assertThat(task.recurrenceByDay).isNull()
+        assertThat(task.recurrenceUntil).isNull()
+        assertThat(task.reminderTimes).isNull()
+        // A task that does not repeat cannot be a RETIRED routine either.
+        assertThat(task.finishedOn).isNull()
+    }
+
+    @Test
+    fun `changing the frequency of a retired routine brings it back`() {
+        val task = stubTask(recurrence = Recurrence.DAILY).apply { finishedOn = 19_500L }
+
+        tools.execute(USER_ID, "setTaskSchedule", structOf("taskId" to TASK_ID, "recurrence" to "WEEKLY"))
+
+        // "Actually make it weekly instead of daily" on a routine the user had finished used to report
+        // success while leaving it retired, so it never fired again on the device.
+        assertThat(task.recurrence).isEqualTo(Recurrence.WEEKLY)
+        assertThat(task.finishedOn).isNull()
+    }
+
+    @Test
+    fun `tweaking the interval of a retired routine leaves it retired`() {
+        val task = stubTask(recurrence = Recurrence.DAILY, interval = 1).apply { finishedOn = 19_500L }
+
+        // The frequency didn't change — this is a tweak, not the user asking for the routine back.
+        tools.execute(USER_ID, "setTaskSchedule", structOf("taskId" to TASK_ID, "recurrenceInterval" to 3))
+
+        assertThat(task.recurrenceInterval).isEqualTo(3)
+        assertThat(task.finishedOn).isEqualTo(19_500L)
+    }
+
     // -------------------- finishRoutine --------------------
 
     @Test
@@ -195,6 +272,51 @@ class ChatToolScheduleTest {
 
         // Silently no-opping would have the model report success on a task that never changed.
         assertThat(payload).contains("not a routine")
+        assertThat(task.finishedOn).isNull()
+    }
+
+    @Test
+    fun `finishing an already-finished routine is a noop and keeps the original day`() {
+        val task = stubTask(recurrence = Recurrence.DAILY).apply { finishedOn = 19_000L }
+
+        // "I'm done with the morning run" said a second time is the user restating, not re-deciding.
+        // Re-stamping moved the retirement forward and flipped every day in between back into the
+        // routine — while reporting noop:false, so the bot confirmed a change nobody asked for.
+        val payload = tools.execute(
+            USER_ID,
+            "finishRoutine",
+            structOf("taskId" to TASK_ID, "finished" to true),
+        ).toString()
+
+        assertThat(task.finishedOn).isEqualTo(19_000L)
+        assertThat(payload).contains("noop")
+        assertThat(payload).contains("true")
+    }
+
+    @Test
+    fun `an explicit on date still moves the day a routine was finished on`() {
+        val task = stubTask(recurrence = Recurrence.DAILY).apply { finishedOn = 19_000L }
+
+        tools.execute(
+            USER_ID,
+            "finishRoutine",
+            structOf("taskId" to TASK_ID, "finished" to true, "on" to "2026-08-06"),
+        )
+
+        assertThat(task.finishedOn).isEqualTo(java.time.LocalDate.parse("2026-08-06").toEpochDay())
+    }
+
+    @Test
+    fun `an unparseable on date is rejected instead of silently retiring the routine today`() {
+        val task = stubTask(recurrence = Recurrence.DAILY)
+
+        val payload = tools.execute(
+            USER_ID,
+            "finishRoutine",
+            structOf("taskId" to TASK_ID, "finished" to true, "on" to "end of last month"),
+        ).toString()
+
+        assertThat(payload).contains("on must be an ISO date")
         assertThat(task.finishedOn).isNull()
     }
 
@@ -240,6 +362,46 @@ class ChatToolScheduleTest {
 
         Mockito.verify(subtaskRepo).delete(only)
         assertThat(task.title).isEqualTo("Plan the trip")
+    }
+
+    @Test
+    fun `a step with a blank title is refused instead of deleting the step it matched`() {
+        val task = stubTask(recurrence = Recurrence.NONE)
+        val first = step(id = 10L, title = "book flight", completed = true, order = 0)
+        val second = step(id = 11L, title = "pack", completed = false, order = 1)
+        given(subtaskRepo.findAllByTaskIdOrderByOrderIndexAsc(TASK_ID)).willReturn(listOf(first, second))
+
+        val payload = tools.execute(
+            USER_ID,
+            "setSteps",
+            structOf(
+                "taskId" to TASK_ID,
+                "steps" to listOf(
+                    mapOf("stepId" to 10L, "title" to "book flight"),
+                    mapOf("stepId" to 11L, "title" to "   "),
+                ),
+            ),
+        ).toString()
+
+        // The list is authoritative, so a skipped entry is a DELETED step. Silently losing "pack"
+        // because its title arrived blank is data loss in a tool that runs without confirmation.
+        assertThat(payload).contains("every step needs a non-blank title")
+        assertThat(second.title).isEqualTo("pack")
+        Mockito.verify(subtaskRepo, Mockito.never()).delete(anyRef())
+    }
+
+    @Test
+    fun `more steps than the cap are refused rather than written one insert at a time`() {
+        stubTask(recurrence = Recurrence.NONE)
+
+        val payload = tools.execute(
+            USER_ID,
+            "setSteps",
+            structOf("taskId" to TASK_ID, "steps" to (1..40).map { mapOf("title" to "step $it") }),
+        ).toString()
+
+        assertThat(payload).contains("too many steps")
+        Mockito.verify(subtaskRepo, Mockito.never()).save(anyRef<TaskSubtaskEntity>())
     }
 
     // -------------------- the guard every new write tool must inherit --------------------
