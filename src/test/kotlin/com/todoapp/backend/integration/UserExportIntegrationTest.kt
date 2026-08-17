@@ -21,6 +21,9 @@ class UserExportIntegrationTest : AbstractIntegrationTest() {
             .andExpect(jsonPath("$.data.profile.displayName").value("Export User"))
             .andExpect(jsonPath("$.data.personalTasks").isArray())
             .andExpect(jsonPath("$.data.groupMemberships").isArray())
+            // Article 20 portability covers focus sessions too — they are server-held personal data, so
+            // an export that silently omitted them would be incomplete rather than merely sparse.
+            .andExpect(jsonPath("$.data.pomodoroSessions").isArray())
             .andExpect(jsonPath("$.data.note").exists())
     }
 

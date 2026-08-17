@@ -196,6 +196,35 @@ class AdminUserQueryRepository(private val jdbc: JdbcTemplate) {
         since,
     ).first()
 
+    /**
+     * Focus totals for one account. A separate windowed aggregate rather than two more columns on
+     * `counts()`, which already carries eight correlated subqueries and repeats `userId` positionally
+     * eight times — going to ten would make an already fragile argument list worse.
+     *
+     * Totals only, and deliberately so: individual session timestamps are a minute-by-minute record of
+     * when this person was at their desk, which is materially more revealing than a task count. The run
+     * id is a COUNT DISTINCT input and never leaves this method.
+     */
+    fun pomodoro(userId: Long, since: OffsetDateTime): AdminUserPomodoro = jdbc.query(
+        """
+        SELECT COALESCE(SUM(CASE WHEN mode = 'FOCUS' THEN elapsed_seconds ELSE 0 END), 0),
+               COALESCE(SUM(CASE WHEN mode = 'FOCUS' AND completed = TRUE THEN 1 ELSE 0 END), 0),
+               COALESCE(SUM(CASE WHEN mode = 'FOCUS' THEN 1 ELSE 0 END), 0),
+               COUNT(DISTINCT client_run_id)
+        FROM pomodoro_sessions WHERE user_id = ? AND ended_at >= ?
+        """.trimIndent(),
+        { rs, _ ->
+            AdminUserPomodoro(
+                focusMinutes = rs.getLong(1) / SECONDS_PER_MINUTE,
+                sessionsCompleted = rs.getLong(2),
+                sessionsStarted = rs.getLong(3),
+                runs = rs.getLong(4),
+            )
+        },
+        userId,
+        since,
+    ).first()
+
     fun sessions(userId: Long): AdminUserSessions = jdbc.query(
         "SELECT COUNT(*), MAX(created_at) FROM refresh_tokens WHERE user_id = ? AND revoked = FALSE",
         { rs, _ ->
@@ -218,4 +247,8 @@ class AdminUserQueryRepository(private val jdbc: JdbcTemplate) {
         { rs, _ -> rs.getInt("filed") to rs.getInt("against") },
         userId, userId, userId,
     ).first()
+
+    private companion object {
+        const val SECONDS_PER_MINUTE = 60L
+    }
 }

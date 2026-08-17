@@ -21,6 +21,14 @@ import java.time.ZoneOffset
  * day permanently — and a hole in DAU history cannot be recomputed. At current volume the whole overview
  * is a handful of indexed counts; revisit if MAU passes ~5k or the payload takes over ~300ms warm.
  */
+/**
+ * A zone-free UTC calendar day derived from a `TIMESTAMP WITH TIME ZONE` column.
+ *
+ * Written once and reused in both the projection and the GROUP BY so the two can never drift apart —
+ * a mismatch there is a silent wrong-answer, not an error.
+ */
+private const val UTC_DAY = "CAST(FLOOR(EXTRACT(EPOCH FROM ended_at) / 86400) AS BIGINT)"
+
 @Repository
 class MetricsQueryRepository(private val jdbc: JdbcTemplate) {
 
@@ -198,6 +206,44 @@ class MetricsQueryRepository(private val jdbc: JdbcTemplate) {
         to,
     ).firstOrNull() ?: ChatTotals()
 
+    // ---- pomodoro ------------------------------------------------------------------------------
+
+    /**
+     * Whether any session has ever been recorded. Separates "not measurable yet" from a real zero.
+     *
+     * pomodoro_sessions ships empty and there is no source to backfill it from — sessions were never
+     * persisted anywhere before V30 — so a confident 0 on the panel would read as "nobody focused today"
+     * when the truth is "this could not be measured until today".
+     */
+    fun pomodoroSessionsExist(): Boolean = count("SELECT COUNT(*) FROM pomodoro_sessions") > 0
+
+    /**
+     * Focus time sums elapsed_seconds and never planned_seconds: a run abandoned six minutes into
+     * twenty-five contributes six minutes. Using the planned figure would report the time the app
+     * offered as the time the user actually spent.
+     *
+     * Half-open on ended_at rather than a "since" bound, because the client supplies these timestamps
+     * and a device with a skewed clock can write a row dated next year.
+     */
+    fun pomodoroTotalsBetween(from: OffsetDateTime, toExclusive: OffsetDateTime): PomodoroTotals = jdbc.query(
+        "SELECT COALESCE(SUM(CASE WHEN mode = 'FOCUS' THEN elapsed_seconds ELSE 0 END), 0), " +
+            "COALESCE(SUM(CASE WHEN mode = 'FOCUS' AND completed = TRUE THEN 1 ELSE 0 END), 0), " +
+            "COALESCE(SUM(CASE WHEN mode = 'FOCUS' THEN 1 ELSE 0 END), 0), " +
+            "COUNT(DISTINCT user_id), COUNT(DISTINCT client_run_id) " +
+            "FROM pomodoro_sessions WHERE ended_at >= ? AND ended_at < ?",
+        { rs, _ ->
+            PomodoroTotals(
+                focusSeconds = rs.getLong(1),
+                focusCompleted = rs.getLong(2),
+                focusStarted = rs.getLong(3),
+                uniqueUsers = rs.getLong(4),
+                runs = rs.getLong(5),
+            )
+        },
+        from,
+        toExclusive,
+    ).firstOrNull() ?: PomodoroTotals()
+
     // ---- moderation ----------------------------------------------------------------------------
 
     fun openReports(table: String): Long = count("SELECT COUNT(*) FROM $table WHERE status = 'OPEN'")
@@ -250,6 +296,32 @@ class MetricsQueryRepository(private val jdbc: JdbcTemplate) {
         to,
     ).toMap()
 
+    /**
+     * Focus **minutes** per UTC day. The integer division is deliberate — the chart has no use for
+     * seconds, and rounding at the edge of a day is noise next to a daily total.
+     *
+     * Buckets on epoch seconds rather than `CAST(ended_at AS DATE)`. **That cast is not UTC.** It
+     * resolves in the session's time zone on both engines, so on a server running Europe/Istanbul a row
+     * stored as `2026-08-17 23:30:00+00` casts to `2026-08-18` — measured, not assumed. Since this whole
+     * surface is labelled `zone = "UTC"`, that would move an evening session into the next day and
+     * quietly shift every daily total by three hours.
+     *
+     * Epoch seconds are defined in UTC by construction, so dividing by 86400 is a zone-free day number,
+     * and both H2 and Postgres compute `EXTRACT(EPOCH FROM …)` identically without any dialect-specific
+     * date function — which keeps the file's "no date arithmetic in SQL" contract intact in spirit.
+     *
+     * The three older series below ([dailyNewUsers], [dailyTasksCreated], [dailyTasksCompleted]) still
+     * use the cast and therefore still carry that skew. Left alone deliberately: correcting them changes
+     * numbers already on a live panel, which is a product decision rather than a side effect of adding
+     * pomodoro.
+     */
+    fun dailyPomodoroFocusMinutes(from: LocalDate, to: LocalDate): Map<LocalDate, Long> = epochDayCountMap(
+        "SELECT $UTC_DAY AS d, COALESCE(SUM(elapsed_seconds), 0) / 60 FROM pomodoro_sessions " +
+            "WHERE mode = 'FOCUS' AND ended_at >= ? AND ended_at < ? GROUP BY $UTC_DAY",
+        from,
+        to,
+    )
+
     // ---- funnel ---------------------------------------------------------------------------------
 
     fun registeredSince(from: OffsetDateTime): Long = usersCreatedSince(from)
@@ -288,6 +360,18 @@ class MetricsQueryRepository(private val jdbc: JdbcTemplate) {
     private fun countMap(sql: String, vararg args: Any?): Map<String, Long> =
         jdbc.query(sql, { rs, _ -> (rs.getString(1) ?: "UNKNOWN") to rs.getLong(2) }, *args).toMap()
 
+    /**
+     * Same window binding as [dateCountMap], but the first column is a **UTC epoch day** rather than a
+     * SQL DATE. See [dailyPomodoroFocusMinutes] for why the cast to DATE cannot be trusted here.
+     */
+    private fun epochDayCountMap(sql: String, from: LocalDate, toExclusive: LocalDate): Map<LocalDate, Long> =
+        jdbc.query(
+            sql,
+            { rs, _ -> LocalDate.ofEpochDay(rs.getLong(1)) to rs.getLong(2) },
+            from.atStartOfDay(ZoneOffset.UTC).toOffsetDateTime(),
+            toExclusive.plusDays(1).atStartOfDay(ZoneOffset.UTC).toOffsetDateTime(),
+        ).toMap()
+
     private fun dateCountMap(sql: String, from: LocalDate, toExclusive: LocalDate): Map<LocalDate, Long> =
         jdbc.query(
             sql,
@@ -308,4 +392,17 @@ data class ChatTotals(
     val responseTokens: Long = 0,
     val serverMs: Long = 0,
     val uniqueUsers: Long = 0,
+)
+
+/**
+ * Focus totals over a window. [focusStarted] counts every FOCUS interval that produced a row and
+ * [focusCompleted] only those that ran to zero, so their ratio is a completion rate — an optimistic one,
+ * because a session killed by process death leaves no row at all and therefore never counts as abandoned.
+ */
+data class PomodoroTotals(
+    val focusSeconds: Long = 0,
+    val focusCompleted: Long = 0,
+    val focusStarted: Long = 0,
+    val uniqueUsers: Long = 0,
+    val runs: Long = 0,
 )

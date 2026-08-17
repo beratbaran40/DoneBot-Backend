@@ -20,6 +20,7 @@ data class AdminOverview(
     val tasks: TasksBlock,
     val groups: GroupsBlock,
     val chat: ChatBlock,
+    val pomodoro: PomodoroBlock,
     val moderation: ModerationBlock,
 )
 
@@ -75,6 +76,26 @@ data class TasksBlock(
     val recurring: Long,
     val withPhotos: Long,
     val byCategory: Map<String, Long>,
+)
+
+/**
+ * Focus-session totals. Nullable-until-measurable for the same reason as [TasksBlock.completedToday]:
+ * pomodoro_sessions ships empty and there is nothing to backfill it from — sessions were never persisted
+ * anywhere before V30 — so a confident 0 would read as "nobody focused today" when the truth is "this
+ * could not be measured until today".
+ *
+ * [completionRate7d] is **optimistically biased** and the panel must not present it as plain fact. A
+ * session that dies with the process, or is swiped away, leaves no row at all, so abandonments are
+ * systematically undercounted relative to completions. See PomodoroSessionRecorder on the client.
+ */
+data class PomodoroBlock(
+    val focusMinutesToday: Long?,
+    val focusMinutes7d: Long?,
+    val sessionsCompleted7d: Long?,
+    val completionRate7d: Double?,
+    val uniqueUsers7d: Long,
+    val runs7d: Long,
+    val avgFocusMinutesPerUser7d: Long?,
 )
 
 data class GroupsBlock(

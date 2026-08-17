@@ -63,6 +63,15 @@ class MetricsService(
         }
 
         val chat7d = repository.chatTotalsBetween(sevenDaysAgo, today)
+
+        // Same "no data yet" vs "genuinely zero" split as completed_at above. pomodoro_sessions ships
+        // empty and there is nothing to backfill it from, so every derived figure stays null until the
+        // first row arrives from a released client.
+        val hasPomodoroData = repository.pomodoroSessionsExist()
+        val tomorrowStart = today.plusDays(1).startOfDayUtc()
+        val pomo7d = repository.pomodoroTotalsBetween(sevenDaysAgo.startOfDayUtc(), tomorrowStart)
+        val pomoToday = repository.pomodoroTotalsBetween(todayStart, tomorrowStart)
+
         val oldestOpen = repository.oldestOpenReport()
 
         return AdminOverview(
@@ -117,6 +126,23 @@ class MetricsService(
                 responseTokens7d = chat7d.responseTokens,
                 avgServerMs7d = if (chat7d.requests == 0L) null else chat7d.serverMs / chat7d.requests,
             ),
+            pomodoro = PomodoroBlock(
+                focusMinutesToday = if (hasPomodoroData) pomoToday.focusSeconds / SECONDS_PER_MINUTE else null,
+                focusMinutes7d = if (hasPomodoroData) pomo7d.focusSeconds / SECONDS_PER_MINUTE else null,
+                sessionsCompleted7d = if (hasPomodoroData) pomo7d.focusCompleted else null,
+                completionRate7d = if (pomo7d.focusStarted == 0L) {
+                    null
+                } else {
+                    pomo7d.focusCompleted.toDouble() / pomo7d.focusStarted
+                },
+                uniqueUsers7d = pomo7d.uniqueUsers,
+                runs7d = pomo7d.runs,
+                avgFocusMinutesPerUser7d = if (pomo7d.uniqueUsers == 0L) {
+                    null
+                } else {
+                    pomo7d.focusSeconds / SECONDS_PER_MINUTE / pomo7d.uniqueUsers
+                },
+            ),
             moderation = ModerationBlock(
                 openChatReports = repository.openReports("chat_reports"),
                 openContentReports = repository.openReports("content_reports"),
@@ -157,6 +183,7 @@ class MetricsService(
             "tasksCreated" to repository.dailyTasksCreated(from, to),
             "tasksCompleted" to repository.dailyTasksCompleted(from, to),
             "chatRequests" to repository.dailyChatRequests(from, to),
+            "pomodoroFocusMinutes" to repository.dailyPomodoroFocusMinutes(from, to),
         ).mapValues { (_, byDay) -> fillGaps(byDay, from, to) }
 
         return AdminTimeSeries(
@@ -252,6 +279,7 @@ class MetricsService(
 
     private companion object {
         const val ZONE = "UTC"
+        const val SECONDS_PER_MINUTE = 60L
         val RETENTION_OFFSETS = listOf(1, 7, 30)
         val COHORT_OFFSETS = listOf(1, 7, 14, 30)
     }
