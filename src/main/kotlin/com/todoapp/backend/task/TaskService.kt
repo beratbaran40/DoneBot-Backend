@@ -63,6 +63,7 @@ class TaskService(
             recurrenceByDay = req.recurrenceByDay?.takeIf { it.isNotBlank() },
             recurrenceUntil = req.recurrenceUntil,
             reminderTimes = req.reminderTimes.toStorageCsv(),
+            declaredType = req.declaredType?.takeIf { it.isNotBlank() },
         )
         val saved = try {
             // saveAndFlush so a unique-index violation surfaces HERE (inside the try), not later at commit.
@@ -133,6 +134,11 @@ class TaskService(
             entity.recurrenceUntil = req.recurrenceUntil
             entity.reminderTimes = req.reminderTimes.toStorageCsv()
         }
+        // Preserved, not overwritten: the type is declared once at creation and no client offers a way
+        // to change it, so a null here means "the sender didn't mention it" — which is also every
+        // request from a client older than the field. Needs no recurrenceRuleSet-style gate because
+        // there is no legitimate "clear the declaration" case to tell apart from silence.
+        entity.declaredType = req.declaredType?.takeIf { it.isNotBlank() } ?: entity.declaredType
         val saved = tasks.save(entity)
         req.subtasks?.let { reconcileSubtasks(saved.id, it) }
         notifyAssignmentIfNeeded(
@@ -264,6 +270,7 @@ class TaskService(
             recurrenceByDay = recurrenceByDay,
             recurrenceUntil = recurrenceUntil,
             reminderTimes = reminderTimes.toSecondsOfDay(),
+            declaredType = declaredType,
         )
     }
 

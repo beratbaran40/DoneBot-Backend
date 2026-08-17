@@ -154,6 +154,23 @@ class TaskEntity(
     @Column(name = "reminder_times", length = 128)
     var reminderTimes: String? = null,
 
+    /**
+     * The shape the user picked when creating the task (ONE_TIME / ROUTINE / STAGED / CUSTOM).
+     *
+     * A declaration, not a summary: clients used to re-derive it from the row on every read, and the
+     * derivation cannot tell "custom, repeating between two dates" from a plain routine — an end sits
+     * beside the frequency inside one rule rather than being a different shape. So a task the user
+     * had explicitly created as Custom came back labelled Routine.
+     *
+     * Null means "never declared" and is permanent for every row older than this column. Clients fall
+     * back to deriving there, which is exactly the old behaviour.
+     *
+     * Deliberately a String rather than an enum: a value written by a newer client must not 400 an
+     * older server, and an unrecognised name should read as "undeclared" rather than fail.
+     */
+    @Column(name = "declared_type", length = 16)
+    var declaredType: String? = null,
+
     @Column(nullable = false, updatable = false)
     var createdAt: Instant = Instant.now(),
 

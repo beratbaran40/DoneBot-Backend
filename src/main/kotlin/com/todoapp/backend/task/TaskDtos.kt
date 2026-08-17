@@ -54,6 +54,18 @@ data class TaskRequest(
      * value un-clearable, and clearing an end date is a thing users legitimately do.
      */
     val recurrenceRuleSet: Boolean = false,
+    /**
+     * The shape the user picked when creating the task (ONE_TIME / ROUTINE / STAGED / CUSTOM).
+     *
+     * Set once at creation and never changed by an edit — no client offers a type picker — so
+     * [TaskService.update] preserves the stored value when this is null. That also makes it safe for
+     * an older client, which omits the field entirely and must not erase a declaration it has no
+     * concept of. Unlike the recurrence rule there is no "clear it" case to support, so this needs no
+     * companion flag.
+     *
+     * A String, not an enum: a name written by a newer client must not 400 this endpoint.
+     */
+    @field:Size(max = 16) val declaredType: String? = null,
 )
 
 data class SubtaskRequest(
@@ -103,6 +115,8 @@ data class TaskData(
     val recurrenceUntil: Long? = null,
     /** Absolute reminder times as SECOND-of-day; empty = the single reminderOffsetMinutes reminder. */
     val reminderTimes: List<Int> = emptyList(),
+    /** The shape declared at creation; null = never declared, so the client derives it as before. */
+    val declaredType: String? = null,
 )
 
 data class SubtaskData(

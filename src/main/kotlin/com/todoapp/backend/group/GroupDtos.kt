@@ -143,6 +143,16 @@ data class GroupTaskUpdateRequest(
     val recurrenceInterval: Int? = null,
     @field:jakarta.validation.constraints.Size(max = 64) val recurrenceByDay: String? = null,
     val recurrenceUntil: Long? = null,
+    /**
+     * Same JSON-can't-distinguish-null trick as `clearAssignee` and `clearLocation`: set true to make
+     * the routine open-ended again.
+     *
+     * Without it a scheduled end could be set and moved but never removed, since null here means "no
+     * change". That left the client unable to offer "No end" at all, and forced it to drag the end
+     * forward whenever the user moved the start past it — `firesOn` rejects every day outside a
+     * crossed pair, so the alternative was a routine that saves and then fires on no day at all.
+     */
+    val clearRecurrenceUntil: Boolean = false,
     /** Absolute reminder times as SECOND-of-day. */
     val reminderTimes: List<Int>? = null,
     val category: TaskCategory? = null,
@@ -177,6 +187,15 @@ data class GroupTaskData(
     val recurrenceUntil: Long? = null,
     val reminderTimes: List<Int> = emptyList(),
     val subtasks: List<SubtaskData> = emptyList(),
+    /**
+     * The shape declared when the task was created; null = never declared, so the client derives it.
+     *
+     * Carried here so every member sees the same badge. A group task is the same `TaskEntity` as a
+     * personal one, so the column has been available all along — and serving it from the server is
+     * the only way the declaration can be shared, since the client's group cache is wiped and
+     * re-inserted wholesale on every sync.
+     */
+    val declaredType: String? = null,
 )
 
 data class GroupTaskListData(

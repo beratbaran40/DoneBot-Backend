@@ -160,7 +160,9 @@ class GroupTaskService(
         req.recurrence?.let { task.recurrence = it }
         req.recurrenceInterval?.let { task.recurrenceInterval = it.coerceAtLeast(1) }
         req.recurrenceByDay?.let { task.recurrenceByDay = it.takeIf { csv -> csv.isNotBlank() } }
-        req.recurrenceUntil?.let { task.recurrenceUntil = it }
+        // clearRecurrenceUntil wins over a value, mirroring clearLocation: a request that says both
+        // "remove the end" and "set this end" is contradictory, and removal is the safer reading.
+        if (req.clearRecurrenceUntil) task.recurrenceUntil = null else req.recurrenceUntil?.let { task.recurrenceUntil = it }
         req.reminderTimes?.let { task.reminderTimes = it.joinToString(",").takeIf { csv -> csv.isNotBlank() } }
         req.category?.let { task.category = it }
         req.customCategoryName?.let { task.customCategoryName = it.takeIf { name -> name.isNotBlank() } }
@@ -295,6 +297,7 @@ class GroupTaskService(
             subtasks = subtaskRepo.findAllByTaskIdOrderByOrderIndexAsc(id).map {
                 SubtaskData(id = it.id, title = it.title, isCompleted = it.isCompleted, orderIndex = it.orderIndex)
             },
+            declaredType = declaredType,
         )
     }
 }

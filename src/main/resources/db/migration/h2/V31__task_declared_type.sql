@@ -1,0 +1,19 @@
+-- V31: record the task shape the user actually chose, instead of guessing it back from the row.
+--
+-- The client used to derive the type (ONE_TIME / ROUTINE / STAGED / CUSTOM) from the task's data on
+-- every read. That works for three of the four and is unfixable for the fourth: a scheduled end sits
+-- beside the frequency inside ONE rule (see V19), so "custom, repeating between two dates" and a
+-- plain routine with an end are the same row. A task the user had explicitly created as Custom
+-- therefore came back labelled Routine, every time — the derivation had no way to know better.
+--
+-- Nullable with NO default and deliberately NO backfill. Filling it in would mean running the very
+-- derivation this column exists to stop trusting, which would freeze today's wrong answer into
+-- storage permanently. NULL means "never declared", which is the honest state of every row that
+-- predates this migration, and clients fall back to deriving there — i.e. exactly today's behaviour.
+--
+-- VARCHAR rather than an enum type, for the same reason the entity maps it as a String: a value
+-- written by a newer client must read back as "undeclared" on an older server rather than fail it.
+-- Group tasks are the same `tasks` row, so they get this for free — and serving it from here is the
+-- only way a declaration can be shared, since a member's local group cache is wiped and re-inserted
+-- wholesale on every sync.
+ALTER TABLE tasks ADD COLUMN declared_type VARCHAR(16);
