@@ -26,7 +26,19 @@ class ActivityBackfillMigrationTest : AbstractIntegrationTest() {
     @Autowired
     private lateinit var jdbc: JdbcTemplate
 
-    private val today: LocalDate = LocalDate.now(ZoneOffset.UTC)
+    /**
+     * The **JVM's** today, not UTC's, and the difference is not cosmetic.
+     *
+     * V23 buckets with `CAST(created_at AS DATE)`, and that cast resolves in the session's time zone on
+     * both H2 and Postgres — measured, not assumed. On a machine at UTC+3 between 00:00 and 03:00 local,
+     * a task inserted "now" casts to today while `LocalDate.now(UTC)` is still yesterday, so this suite
+     * failed for three hours a night and passed the rest of the time. Verified by re-running it with
+     * TZ=UTC, where all five cases pass.
+     *
+     * Production is unaffected — Render runs UTC, so the two agree there. This aligns the test with what
+     * the migration actually does rather than with what the server happens to make true.
+     */
+    private val today: LocalDate = LocalDate.now()
 
     @Test
     fun `a task created today backfills that day`() {
