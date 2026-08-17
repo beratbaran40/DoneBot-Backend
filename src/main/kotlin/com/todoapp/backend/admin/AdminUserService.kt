@@ -77,13 +77,27 @@ data class AdminUserChatUsage(
     val responseTokens: Long,
 )
 
+/**
+ * Focus totals only. [sessionsStarted] counts every FOCUS interval that left a row and
+ * [sessionsCompleted] only those that ran to zero — a session killed by process death leaves no row, so
+ * the ratio reads optimistically.
+ */
+data class AdminUserPomodoro(
+    val focusMinutes: Long,
+    val sessionsCompleted: Long,
+    val sessionsStarted: Long,
+    val runs: Long,
+)
+
 data class AdminUserSessions(val activeRefreshTokens: Int, val lastRefreshAt: String?)
 
 /**
  * Everything the support screen shows about one account — and nothing more.
  *
  * The omissions are the design. No task titles, no task descriptions, no journal, no chat transcript,
- * no other user's email, no password hash, no avatar bytes, no full device token. Support questions
+ * no other user's email, no password hash, no avatar bytes, no full device token, and **no individual
+ * focus-session times** — pomodoro is aggregated into totals and never listed, because a list of session
+ * timestamps is a minute-by-minute record of when this person was at their desk. Support questions
  * ("did my task sync?", "why did I stop getting reminders?") are answerable from counts, dates and
  * device registrations; reading someone's actual to-do list is not required to answer them, and the
  * privacy policy this product ships under does not promise otherwise.
@@ -108,6 +122,8 @@ data class AdminUserDetail(
     val groups: List<AdminUserGroup>,
     val devices: List<AdminUserDevice>,
     val chatUsage30d: AdminUserChatUsage,
+    /** Aggregated focus totals. Individual session times are never listed — see the class KDoc. */
+    val pomodoro30d: AdminUserPomodoro,
     val reportsFiled: Int,
     val reportsAgainst: Int,
     val sessions: AdminUserSessions,
@@ -169,6 +185,10 @@ class AdminUserService(
             groups = query.groups(userId),
             devices = query.devices(userId),
             chatUsage30d = query.chatUsage(userId, today.minusDays(29)),
+            pomodoro30d = query.pomodoro(
+                userId,
+                today.minusDays(29).atStartOfDay(java.time.ZoneOffset.UTC).toOffsetDateTime(),
+            ),
             reportsFiled = filed,
             reportsAgainst = against,
             sessions = query.sessions(userId),
