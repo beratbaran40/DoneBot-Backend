@@ -26,6 +26,7 @@ class UserDataExportService(
     private val members: GroupMemberRepository,
     private val groups: GroupRepository,
     private val preferences: UserPreferencesRepository,
+    private val pomodoro: com.todoapp.backend.pomodoro.PomodoroSessionRepository,
 ) {
     @Transactional(readOnly = true)
     fun export(userId: Long): UserDataExport {
@@ -50,6 +51,22 @@ class UserDataExportService(
             preferences = prefs?.let { ExportPreferences(pushEnabled = it.pushEnabled, updatedAt = it.updatedAt.toString()) },
             personalTasks = personalTasks,
             groupMemberships = memberships,
+            // clientRunId is included: Article 20 portability asks for structure, not just values, and
+            // without it the export is a bag of intervals with no way to tell which sitting each
+            // belonged to. It is the user's own identifier for their own data.
+            pomodoroSessions = pomodoro.findAllByUserId(userId).map {
+                ExportPomodoroSession(
+                    clientRunId = it.clientRunId,
+                    sessionIndex = it.sessionIndex,
+                    mode = it.mode,
+                    plannedSeconds = it.plannedSeconds,
+                    elapsedSeconds = it.elapsedSeconds,
+                    completed = it.completed,
+                    startedAt = it.startedAt.toString(),
+                    endedAt = it.endedAt.toString(),
+                    localDate = it.localDate,
+                )
+            },
             note = "Personal data DoneBot holds on its servers for your account. Chat history and " +
                 "journal entries live only on your device and are not included here.",
         )
@@ -62,7 +79,21 @@ data class UserDataExport(
     val preferences: ExportPreferences?,
     val personalTasks: List<ExportTask>,
     val groupMemberships: List<ExportMembership>,
+    val pomodoroSessions: List<ExportPomodoroSession>,
     val note: String,
+)
+
+/** One focus interval as recorded. Timing only — no task titles, because the row never carried any. */
+data class ExportPomodoroSession(
+    val clientRunId: String,
+    val sessionIndex: Int,
+    val mode: String,
+    val plannedSeconds: Int,
+    val elapsedSeconds: Int,
+    val completed: Boolean,
+    val startedAt: String,
+    val endedAt: String,
+    val localDate: Long,
 )
 
 data class ExportProfile(

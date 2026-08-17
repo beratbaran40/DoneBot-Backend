@@ -23,4 +23,7 @@ interface PomodoroSessionRepository : JpaRepository<PomodoroSessionEntity, Long>
 
     /** GDPR Article 20 export. */
     fun findAllByUserId(userId: Long): List<PomodoroSessionEntity>
+
+    /** 24-month retention purge — see [PomodoroRetentionJob]. Returns the number of rows removed. */
+    fun deleteAllByEndedAtBefore(cutoff: java.time.Instant): Long
 }

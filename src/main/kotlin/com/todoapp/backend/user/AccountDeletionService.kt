@@ -36,7 +36,9 @@ data class TransferredGroup(
  * Flyway V14: deleting the user row cascades group_members, device_tokens, refresh_tokens, notifications,
  * password_reset_tokens, chat_reports, user_preferences, group_activities and group_invitations, and
  * unassigns the user from any group tasks (assigned_to_user_id -> NULL). Deleting a group/task cascades
- * its task_photos. So no rows are left orphaned (§4.20 / §4.19).
+ * its task_photos. V30 adds pomodoro_sessions to that cascade — no code here, but it belongs on this
+ * list, which is the checklist someone reads to answer "is anything left orphaned?". So no rows are left
+ * orphaned (§4.20 / §4.19).
  */
 @Service
 class AccountDeletionService(
