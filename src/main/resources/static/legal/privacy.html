@@ -322,7 +322,7 @@
 <!-- ======================== ENGLISH ======================== -->
 <section data-lang="en" class="active">
     <h1>Privacy Policy</h1>
-    <p class="updated">Last updated: 2026-07-05</p>
+    <p class="updated">Last updated: 2026-08-17</p>
 
     <p>This Privacy Policy describes how DoneBot ("we", "our", "us") collects, uses, and shares information when you use the DoneBot mobile application (the "App").</p>
 
@@ -333,7 +333,8 @@
             <li><strong>Tasks &amp; groups</strong>: titles, descriptions, dates, recurrence settings, completion status, group memberships, and roles you assign.</li>
             <li><strong>Chat with DoneBot (AI assistant)</strong>: messages you send to the in-app DoneBot assistant are sent to Google Vertex AI (Gemini) for processing. Your conversation history is stored only on your device &mdash; our server is stateless and does not keep your chats. The only exception is an AI reply you explicitly <em>report</em>, which is stored on our server for safety review.</li>
             <li><strong>Device &amp; push tokens</strong>: a Firebase Cloud Messaging token, a randomly generated device identifier (not a hardware or advertising ID), device model, and app version. DoneBot uses no advertising ID.</li>
-            <li><strong>Diagnostic data</strong>: Firebase Crashlytics crash reports. Analytics and performance monitoring are bundled but collection is off by default; you can enable or disable them from app settings.</li>
+            <li><strong>Focus (Pomodoro) sessions</strong>: when you run a focus timer, we store the planned length of each interval, how much of it actually elapsed, whether it finished, and when it started and ended. These records let you see your focus statistics across your devices, and let us measure in aggregate how the feature is used. They contain no task titles or content. Sessions you run before signing in stay on your device and are attached to your account the first time you sign in.</li>
+            <li><strong>Diagnostic &amp; usage data</strong>: Firebase Crashlytics crash reports, and Firebase Analytics usage events (screens opened, tasks created and completed, focus sessions completed, assistant messages sent). Usage and crash collection is <strong>on by default</strong>; you can turn it off at any time from <em>Settings &rarr; Privacy &rarr; Share usage &amp; crash data</em>. Performance monitoring is separate and <strong>off by default</strong> &mdash; it collects only if you turn on <em>Share performance diagnostics</em>.</li>
         </ul>
     </div>
 
@@ -344,6 +345,7 @@
             <li>To deliver task reminders, group invitations, and ownership change notifications.</li>
             <li>To process AI chat requests via Google Gemini (input is sent to Google for inference, but is not used to train Google&rsquo;s models per their Vertex AI terms).</li>
             <li>To diagnose crashes and improve stability.</li>
+            <li>To understand, in aggregate, how DoneBot&rsquo;s features are used so we can improve them.</li>
         </ul>
     </div>
 
@@ -366,6 +368,7 @@
             <li>Tasks, groups, and account data are kept until you delete them (or delete your account).</li>
             <li>On-device chat history is capped at the most recent 500 messages; access tokens expire after 1 hour and refresh tokens after 30 days.</li>
             <li>In-app notifications are purged after 30 days.</li>
+            <li>Focus (Pomodoro) session records are kept for <strong>24 months</strong> and then deleted.</li>
             <li>Backups may retain residual data for up to 30 days for disaster recovery.</li>
         </ul>
         <p>You can delete your account at any time from <em>Settings &rarr; Account &rarr; Delete Account</em>. This deletes your personal tasks, group memberships, and device tokens in the same operation, revokes your sessions, and either transfers groups you own to another member (admin preferred) or deletes them if you were the only member.</p>
@@ -400,7 +403,7 @@
 <!-- ======================== TÜRKÇE ======================== -->
 <section data-lang="tr">
     <h1>Gizlilik Politikası</h1>
-    <p class="updated">Son güncelleme: 05.07.2026</p>
+    <p class="updated">Son güncelleme: 17.08.2026</p>
 
     <p>Bu Gizlilik Politikası, DoneBot ("biz", "bizim") mobil uygulamasını ("Uygulama") kullandığınızda hangi bilgileri topladığımızı, nasıl kullandığımızı ve kimlerle paylaştığımızı açıklar.</p>
 
@@ -411,7 +414,8 @@
             <li><strong>Görevler ve gruplar</strong>: başlıklar, açıklamalar, tarihler, tekrar ayarları, tamamlanma durumu, grup üyelikleri ve atadığınız roller.</li>
             <li><strong>DoneBot ile sohbet (AI asistan)</strong>: uygulama içi DoneBot asistanına gönderdiğiniz mesajlar, işlenmek üzere Google Vertex AI (Gemini) hizmetine gönderilir. Konuşma geçmişiniz yalnızca cihazınızda saklanır &mdash; sunucumuz durumsuzdur (stateless) ve sohbetlerinizi tutmaz. Tek istisna, açıkça <em>bildirdiğiniz (report)</em> bir AI yanıtıdır; bu yanıt güvenlik incelemesi için sunucumuzda saklanır.</li>
             <li><strong>Cihaz ve bildirim tokenları</strong>: Firebase Cloud Messaging tokenı, rastgele üretilen bir cihaz tanımlayıcısı (donanım veya reklam kimliği değil), cihaz modeli ve uygulama sürümü. DoneBot reklam kimliği kullanmaz.</li>
-            <li><strong>Teşhis verileri</strong>: Firebase Crashlytics çökme raporları. Analytics ve performans izleme uygulamada bulunur ancak toplama varsayılan olarak kapalıdır; uygulama ayarlarından açıp kapatabilirsiniz.</li>
+            <li><strong>Odak (Pomodoro) seansları</strong>: bir odak sayacı çalıştırdığınızda her aralığın planlanan süresini, gerçekte ne kadarının işlediğini, tamamlanıp tamamlanmadığını ve başlangıç &ndash; bitiş zamanını saklarız. Bu kayıtlar odak istatistiklerinizi cihazlarınız arasında görebilmenizi sağlar ve özelliğin nasıl kullanıldığını toplu düzeyde ölçmemize yarar. Görev başlığı veya içeriği içermez. Giriş yapmadan önce çalıştırdığınız seanslar cihazınızda kalır ve ilk giriş yaptığınızda hesabınıza bağlanır.</li>
+            <li><strong>Teşhis ve kullanım verileri</strong>: Firebase Crashlytics çökme raporları ve Firebase Analytics kullanım olayları (açılan ekranlar, oluşturulan ve tamamlanan görevler, tamamlanan odak seansları, asistana gönderilen mesajlar). Kullanım ve çökme verisi toplama <strong>varsayılan olarak açıktır</strong>; <em>Ayarlar &rarr; Gizlilik &rarr; Kullanım ve çökme verisini paylaş</em> yolundan istediğiniz zaman kapatabilirsiniz. Performans izleme bundan ayrıdır ve <strong>varsayılan olarak kapalıdır</strong> &mdash; yalnız <em>Performans teşhisini paylaş</em> ayarını açarsanız veri toplar.</li>
         </ul>
     </div>
 
@@ -422,6 +426,7 @@
             <li>Görev hatırlatmaları, grup davetleri ve sahiplik değişikliği bildirimleri göndermek için.</li>
             <li>AI sohbet isteklerini Google Gemini üzerinden işlemek için (girdi, çıkarım amacıyla Google&rsquo;a gönderilir; Vertex AI şartlarına göre Google&rsquo;ın modellerini eğitmek için kullanılmaz).</li>
             <li>Çökmeleri teşhis etmek ve istikrarı artırmak için.</li>
+            <li>DoneBot özelliklerinin nasıl kullanıldığını toplu (kişi bazlı olmayan) düzeyde anlamak ve geliştirmek için.</li>
         </ul>
     </div>
 
@@ -444,6 +449,7 @@
             <li>Görevler, gruplar ve hesap verileri, siz silene (veya hesabınızı silene) kadar saklanır.</li>
             <li>Cihazdaki sohbet geçmişi en fazla son 500 mesajla sınırlıdır; erişim tokenları 1 saat, yenileme tokenları 30 gün sonra sona erer.</li>
             <li>Uygulama içi bildirimler 30 gün sonra silinir.</li>
+            <li>Odak (Pomodoro) seans kayıtları <strong>24 ay</strong> saklanır, ardından silinir.</li>
             <li>Felaket kurtarma için yedeklerde kalan veriler en fazla 30 gün boyunca saklanabilir.</li>
         </ul>
         <p>Hesabınızı istediğiniz zaman <em>Ayarlar &rarr; Hesap &rarr; Hesabı Sil</em> yolundan silebilirsiniz. Bu işlem; kişisel görevlerinizi, grup üyeliklerinizi ve cihaz tokenlarınızı aynı anda siler, oturumlarınızı iptal eder ve sahibi olduğunuz grupları başka bir üyeye devreder (yönetici tercih edilir) ya da tek üye sizseniz siler.</p>
