@@ -55,7 +55,83 @@ class AdminMetricsIntegrationTest : AbstractIntegrationTest() {
             .andExpect(jsonPath("$.data.tasks.total").exists())
             .andExpect(jsonPath("$.data.groups.total").exists())
             .andExpect(jsonPath("$.data.chat.requestsToday").exists())
+            .andExpect(jsonPath("$.data.pomodoro.uniqueUsers7d").exists())
             .andExpect(jsonPath("$.data.moderation.openChatReports").exists())
+    }
+
+    @Test
+    fun `pomodoro figures are null until the first session is recorded, not zero`() {
+        val admin = admin()
+
+        // pomodoro_sessions ships empty with nothing to backfill from, so a confident 0 would read as
+        // "nobody focused today" when the truth is "this could not be measured until today". Anyone
+        // tempted to "fix" these to 0 should fail here.
+        mockMvc.perform(get("/admin/metrics/overview").header("Authorization", bearer(admin)))
+            .andExpect(status().isOk)
+            .andExpect(jsonPath("$.data.pomodoro.focusMinutesToday").doesNotExist())
+            .andExpect(jsonPath("$.data.pomodoro.focusMinutes7d").doesNotExist())
+            .andExpect(jsonPath("$.data.pomodoro.sessionsCompleted7d").doesNotExist())
+            .andExpect(jsonPath("$.data.pomodoro.uniqueUsers7d").value(0))
+    }
+
+    @Test
+    fun `focus time sums elapsed seconds while completion counts exclude abandoned sessions`() {
+        val admin = admin()
+        val now = OffsetDateTime.now(ZoneOffset.UTC)
+
+        // 25 minutes run to completion, plus 6 minutes of a 25-minute session that was abandoned.
+        insertPomodoro(admin, elapsedSeconds = 1500, completed = true, endedAt = now)
+        insertPomodoro(admin, elapsedSeconds = 360, plannedSeconds = 1500, completed = false, endedAt = now)
+        // A break must never reach a focus figure.
+        insertPomodoro(admin, mode = "SHORT_BREAK", elapsedSeconds = 300, completed = true, endedAt = now)
+
+        mockMvc.perform(get("/admin/metrics/overview").header("Authorization", bearer(admin)))
+            .andExpect(status().isOk)
+            // 1500 + 360 = 1860s = 31 min. Summing planned_seconds instead would give 50 and report the
+            // time the app offered as the time the user spent.
+            .andExpect(jsonPath("$.data.pomodoro.focusMinutes7d").value(31))
+            .andExpect(jsonPath("$.data.pomodoro.sessionsCompleted7d").value(1))
+            .andExpect(jsonPath("$.data.pomodoro.completionRate7d").value(0.5))
+            .andExpect(jsonPath("$.data.pomodoro.uniqueUsers7d").value(1))
+            .andExpect(jsonPath("$.data.pomodoro.runs7d").value(3))
+    }
+
+    @Test
+    fun `a session ending late in the UTC day is counted on that day and not the next`() {
+        val admin = admin()
+        // 23:30Z is the case that breaks if CAST(ended_at AS DATE) ever resolves in a non-UTC session
+        // zone: in UTC+3 it would move to tomorrow and every daily total would shift.
+        val lateToday = today.atTime(23, 30).atOffset(ZoneOffset.UTC)
+        insertPomodoro(admin, elapsedSeconds = 1500, completed = true, endedAt = lateToday)
+
+        mockMvc.perform(
+            get("/admin/metrics/timeseries")
+                .param("from", today.minusDays(6).toString())
+                .param("to", today.toString())
+                .header("Authorization", bearer(admin)),
+        )
+            .andExpect(status().isOk)
+            .andExpect(jsonPath("$.data.series.pomodoroFocusMinutes.length()").value(7))
+            .andExpect(jsonPath("$.data.series.pomodoroFocusMinutes[6].date").value(today.toString()))
+            .andExpect(jsonPath("$.data.series.pomodoroFocusMinutes[6].value").value(25))
+    }
+
+    @Test
+    fun `the user detail reports focus totals and never individual session times`() {
+        val admin = admin()
+        val now = OffsetDateTime.now(ZoneOffset.UTC)
+        insertPomodoro(admin, elapsedSeconds = 1500, completed = true, endedAt = now)
+        insertPomodoro(admin, elapsedSeconds = 600, plannedSeconds = 1500, completed = false, endedAt = now)
+
+        mockMvc.perform(get("/admin/users/$admin").header("Authorization", bearer(admin)))
+            .andExpect(status().isOk)
+            .andExpect(jsonPath("$.data.pomodoro30d.focusMinutes").value(35))
+            .andExpect(jsonPath("$.data.pomodoro30d.sessionsCompleted").value(1))
+            .andExpect(jsonPath("$.data.pomodoro30d.sessionsStarted").value(2))
+            // Totals only. A list of session timestamps would be a minute-by-minute record of when this
+            // person was at their desk — the same reason task titles are absent from this payload.
+            .andExpect(jsonPath("$.data.pomodoro30d.sessions").doesNotExist())
+            .andExpect(jsonPath("$.data.pomodoro30d.endedAt").doesNotExist())
     }
 
     @Test
@@ -198,6 +274,31 @@ class AdminMetricsIntegrationTest : AbstractIntegrationTest() {
             "INSERT INTO user_activity_daily (user_id, activity_date, source) VALUES (?, ?, 'live')",
             userId,
             day,
+        )
+    }
+
+    private fun insertPomodoro(
+        userId: Long,
+        mode: String = "FOCUS",
+        plannedSeconds: Int = 1500,
+        elapsedSeconds: Int = 1500,
+        completed: Boolean = true,
+        endedAt: OffsetDateTime,
+    ) {
+        jdbc.update(
+            "INSERT INTO pomodoro_sessions (user_id, client_session_id, client_run_id, session_index, mode, " +
+                "planned_seconds, elapsed_seconds, completed, started_at, ended_at, local_date, tz_offset_minutes) " +
+                "VALUES (?, ?, ?, 0, ?, ?, ?, ?, ?, ?, ?, 0)",
+            userId,
+            java.util.UUID.randomUUID().toString(),
+            java.util.UUID.randomUUID().toString(),
+            mode,
+            plannedSeconds,
+            elapsedSeconds,
+            completed,
+            endedAt.minusSeconds(plannedSeconds.toLong()),
+            endedAt,
+            endedAt.toLocalDate().toEpochDay(),
         )
     }
 
